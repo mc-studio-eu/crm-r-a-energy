@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RdvStatut } from '~~/shared/types'
 import { RDV_STATUTS } from '~~/shared/types'
 
 const supabase = useSupabaseClient()
@@ -15,6 +16,18 @@ const bornes = computed(() => {
   return { debut: debut.toISOString(), fin: fin.toISOString(), date: debut }
 })
 
+interface RdvRow {
+  id: string
+  debut: string
+  fin: string
+  lieu: string | null
+  lieu_lat: number | null
+  lieu_lng: number | null
+  statut: RdvStatut
+  prospects: { id: string, raison_sociale: string, ville: string | null } | null
+  profiles: { id: string, nom: string } | null
+}
+
 const { data: rdvs } = await useAsyncData('carte-rdv', async () => {
   const { data } = await supabase
     .from('rdv')
@@ -22,7 +35,7 @@ const { data: rdvs } = await useAsyncData('carte-rdv', async () => {
     .gte('debut', bornes.value.debut)
     .lt('debut', bornes.value.fin)
     .order('debut')
-  return data ?? []
+  return (data ?? []) as unknown as RdvRow[]
 }, { watch: [jour] })
 
 // Palette stable assignée par commercial.
@@ -31,7 +44,7 @@ const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea', '#0891b2
 const commerciaux = computed(() => {
   const map = new Map<string, { id: string, nom: string, color: string, count: number }>()
   for (const r of rdvs.value ?? []) {
-    const p = r.profiles as any
+    const p = r.profiles
     if (!p?.id) continue
     if (!map.has(p.id)) {
       map.set(p.id, { id: p.id, nom: displayName(p.nom), color: PALETTE[map.size % PALETTE.length]!, count: 0 })
@@ -53,7 +66,7 @@ function toggle(id: string) {
 const rdvVisibles = computed(() =>
   (rdvs.value ?? [])
     .filter(r => r.lieu_lat != null && r.lieu_lng != null)
-    .filter(r => !masques.value.has((r.profiles as any)?.id)))
+    .filter(r => !(r.profiles && masques.value.has(r.profiles.id))))
 
 const sansCoords = computed(() =>
   (rdvs.value ?? []).filter(r => r.lieu_lat == null || r.lieu_lng == null).length)
@@ -61,13 +74,31 @@ const sansCoords = computed(() =>
 const fmtHeure = (d: string) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })
 
 // --- Leaflet (chargé via CDN, aucune dépendance ajoutée au build) ---
-const mapEl = ref<HTMLElement | null>(null)
-let map: any = null
-let markersLayer: any = null
-let L: any = null
+// Typage minimal de la surface Leaflet réellement utilisée (pas de @types installés).
+type LatLng = [number, number]
+interface LMarker { bindPopup: (html: string) => LMarker, addTo: (l: LLayer) => LMarker }
+interface LLayer { addTo: (m: LMap) => LLayer, clearLayers: () => void }
+interface LMap {
+  setView: (c: LatLng, z: number) => LMap
+  fitBounds: (pts: LatLng[], opts?: object) => void
+  remove: () => void
+}
+interface Leaflet {
+  map: (el: HTMLElement) => LMap
+  tileLayer: (url: string, opts: object) => { addTo: (m: LMap) => void }
+  layerGroup: () => LLayer
+  divIcon: (opts: object) => object
+  marker: (c: LatLng, opts: object) => LMarker
+}
 
-function loadLeaflet(): Promise<any> {
-  if ((window as any).L) return Promise.resolve((window as any).L)
+const mapEl = ref<HTMLElement | null>(null)
+let map: LMap | null = null
+let markersLayer: LLayer | null = null
+let L: Leaflet | null = null
+
+function loadLeaflet(): Promise<Leaflet> {
+  const w = window as unknown as { L?: Leaflet }
+  if (w.L) return Promise.resolve(w.L)
   return new Promise((resolve, reject) => {
     if (!document.querySelector('link[data-leaflet]')) {
       const css = document.createElement('link')
@@ -78,7 +109,7 @@ function loadLeaflet(): Promise<any> {
     }
     const script = document.createElement('script')
     script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    script.onload = () => resolve((window as any).L)
+    script.onload = () => resolve(w.L!)
     script.onerror = reject
     document.body.appendChild(script)
   })
@@ -89,7 +120,7 @@ function colorFor(id: string) {
 }
 
 function pinIcon(color: string) {
-  return L.divIcon({
+  return L!.divIcon({
     className: '',
     html: `<div style="width:18px;height:18px;border-radius:50% 50% 50% 0;background:${color};transform:rotate(-45deg);border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.4)"></div>`,
     iconSize: [18, 18],
@@ -99,20 +130,20 @@ function pinIcon(color: string) {
 }
 
 function render() {
-  if (!map || !L) return
+  if (!map || !L || !markersLayer) return
   markersLayer.clearLayers()
-  const pts: [number, number][] = []
+  const pts: LatLng[] = []
   for (const r of rdvVisibles.value) {
     const lat = r.lieu_lat as number
     const lng = r.lieu_lng as number
-    const p = r.prospects as any
-    const c = r.profiles as any
-    const color = colorFor(c?.id)
+    const p = r.prospects
+    const c = r.profiles
+    const color = colorFor(c?.id ?? '')
     const popup = `
       <div style="font-size:13px;line-height:1.5">
         <strong>${fmtHeure(r.debut)} — ${p?.raison_sociale ?? 'Prospect'}</strong><br>
         ${p?.ville ?? ''}<br>
-        <span style="color:${color}">● ${displayName(c?.nom)}</span> · ${RDV_STATUTS[r.statut as keyof typeof RDV_STATUTS] ?? r.statut}<br>
+        <span style="color:${color}">● ${displayName(c?.nom)}</span> · ${RDV_STATUTS[r.statut] ?? r.statut}<br>
         <a href="/prospects/${p?.id}" style="color:#2563eb">Voir la fiche</a>
       </div>`
     L.marker([lat, lng], { icon: pinIcon(color) }).bindPopup(popup).addTo(markersLayer)

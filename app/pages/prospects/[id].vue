@@ -49,9 +49,16 @@ function fmtDate(d: string) {
   return new Date(d).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 }
 
-function activiteLabel(a: any) {
+interface Activite {
+  type: string
+  ancien_statut: ProspectStatut | null
+  nouveau_statut: ProspectStatut | null
+  detail: string | null
+}
+
+function activiteLabel(a: Activite) {
   if (a.type === 'statut') {
-    return `Statut : ${PROSPECT_STATUTS[a.ancien_statut as ProspectStatut] ?? '—'} → ${PROSPECT_STATUTS[a.nouveau_statut as ProspectStatut]}`
+    return `Statut : ${(a.ancien_statut && PROSPECT_STATUTS[a.ancien_statut]) ?? '—'} → ${a.nouveau_statut ? PROSPECT_STATUTS[a.nouveau_statut] : ''}`
   }
   return a.detail ?? a.type
 }

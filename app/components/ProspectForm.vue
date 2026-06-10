@@ -31,6 +31,76 @@ const saving = ref(false)
 const error = ref('')
 const geocodeWarning = ref('')
 
+const siretLoading = ref(false)
+const siretError = ref('')
+
+interface AdresseSuggestion {
+  label: string
+  adresse: string
+  code_postal: string
+  ville: string
+  lat: number
+  lng: number
+}
+const adresseSuggestions = ref<AdresseSuggestion[]>([])
+const adresseOpen = ref(false)
+// Coordonnées issues d'une suggestion choisie : évite un géocodage au save.
+const adresseCoords = ref<{ lat: number, lng: number } | null>(null)
+let adresseTimer: ReturnType<typeof setTimeout> | null = null
+
+function onAdresseInput() {
+  adresseCoords.value = null
+  if (adresseTimer) clearTimeout(adresseTimer)
+  const q = form.adresse.trim()
+  if (q.length < 3) {
+    adresseSuggestions.value = []
+    adresseOpen.value = false
+    return
+  }
+  adresseTimer = setTimeout(async () => {
+    try {
+      adresseSuggestions.value = await $fetch('/api/adresse', { query: { q } })
+      adresseOpen.value = adresseSuggestions.value.length > 0
+    }
+    catch {
+      adresseSuggestions.value = []
+      adresseOpen.value = false
+    }
+  }, 250)
+}
+
+function choisirAdresse(s: AdresseSuggestion) {
+  form.adresse = s.adresse
+  form.code_postal = s.code_postal
+  form.ville = s.ville
+  adresseCoords.value = { lat: s.lat, lng: s.lng }
+  adresseOpen.value = false
+  adresseSuggestions.value = []
+}
+
+async function rechercherSiret() {
+  siretError.value = ''
+  const siret = form.siret.replace(/\s/g, '')
+  if (!/^\d{14}$/.test(siret)) {
+    siretError.value = 'Saisissez un SIRET de 14 chiffres.'
+    return
+  }
+  siretLoading.value = true
+  try {
+    const data = await $fetch('/api/siret', { query: { siret } })
+    if (data.raison_sociale) form.raison_sociale = data.raison_sociale
+    if (data.adresse) form.adresse = data.adresse
+    if (data.code_postal) form.code_postal = data.code_postal
+    if (data.ville) form.ville = data.ville
+  }
+  catch (e: unknown) {
+    siretError.value = errorMessage(e, 'SIRET introuvable.')
+  }
+  finally {
+    siretLoading.value = false
+  }
+}
+
 async function save() {
   saving.value = true
   error.value = ''
@@ -43,7 +113,11 @@ async function save() {
   const adresseChanged = !props.prospect
     || adresseComplete !== [props.prospect.adresse, props.prospect.code_postal, props.prospect.ville].filter(Boolean).join(', ')
 
-  if (adresseComplete && adresseChanged) {
+  if (adresseCoords.value) {
+    lat = adresseCoords.value.lat
+    lng = adresseCoords.value.lng
+  }
+  else if (adresseComplete && adresseChanged) {
     try {
       const geo = await $fetch('/api/geocode', { method: 'POST', body: { adresse: adresseComplete } })
       lat = geo.lat
@@ -94,7 +168,13 @@ async function save() {
       </div>
       <div>
         <label class="label">SIRET</label>
-        <input v-model="form.siret" class="input" pattern="[0-9]{14}" title="14 chiffres">
+        <div class="flex gap-2">
+          <input v-model="form.siret" class="input" pattern="[0-9]{14}" title="14 chiffres" placeholder="14 chiffres" @keydown.enter.prevent="rechercherSiret">
+          <button type="button" class="btn-secondary whitespace-nowrap" :disabled="siretLoading" @click="rechercherSiret">
+            {{ siretLoading ? 'Recherche…' : 'Rechercher' }}
+          </button>
+        </div>
+        <p v-if="siretError" class="mt-1 text-sm text-red-600">{{ siretError }}</p>
       </div>
       <div>
         <label class="label">Contact</label>
@@ -112,9 +192,22 @@ async function save() {
         <label class="label">Source</label>
         <input v-model="form.source" class="input" placeholder="Téléprospection, salon…">
       </div>
-      <div class="md:col-span-2">
+      <div class="md:col-span-2 relative">
         <label class="label">Adresse</label>
-        <input v-model="form.adresse" class="input">
+        <input
+          v-model="form.adresse" class="input" autocomplete="off"
+          @input="onAdresseInput" @focus="onAdresseInput"
+          @blur="() => setTimeout(() => adresseOpen = false, 150)"
+        >
+        <ul v-if="adresseOpen" class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+          <li
+            v-for="s in adresseSuggestions" :key="s.label"
+            class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100"
+            @mousedown.prevent="choisirAdresse(s)"
+          >
+            {{ s.label }}
+          </li>
+        </ul>
       </div>
       <div>
         <label class="label">Code postal</label>

@@ -19,8 +19,10 @@ async function setStatut(id: string, statut: RdvStatut) {
   refresh()
 }
 
+type MonRdv = NonNullable<typeof rdvs.value>[number]
+
 const parJour = computed(() => {
-  const groups: Record<string, any[]> = {}
+  const groups: Record<string, MonRdv[]> = {}
   for (const r of rdvs.value ?? []) {
     const jour = new Date(r.debut).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
     ;(groups[jour] ??= []).push(r)

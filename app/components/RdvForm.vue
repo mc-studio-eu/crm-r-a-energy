@@ -60,8 +60,8 @@ async function runCheck() {
       },
     })
   }
-  catch (e: any) {
-    error.value = e?.data?.statusMessage ?? 'Erreur lors de la vérification'
+  catch (e: unknown) {
+    error.value = errorMessage(e, 'Erreur lors de la vérification')
   }
   checking.value = false
 }
@@ -93,9 +93,10 @@ async function save() {
     await supabase.from('prospects').update({ statut: 'rdv_place' }).eq('id', props.prospect.id)
     emit('created')
   }
-  catch (e: any) {
-    error.value = e?.data?.statusMessage ?? 'Erreur lors de la création du RDV'
-    if (e?.data?.data) checkResult.value = e.data.data
+  catch (e: unknown) {
+    error.value = errorMessage(e, 'Erreur lors de la création du RDV')
+    const data = (e as { data?: { data?: RdvCheckResult } })?.data?.data
+    if (data) checkResult.value = data
   }
   saving.value = false
 }

@@ -24,8 +24,10 @@ const { data: rdvs } = await useAsyncData('planning', async () => {
   return data ?? []
 }, { watch: [semaine] })
 
+type PlanningRdv = NonNullable<typeof rdvs.value>[number]
+
 const parCommercial = computed(() => {
-  const groups: Record<string, { nom: string, rdvs: any[] }> = {}
+  const groups: Record<string, { nom: string, rdvs: PlanningRdv[] }> = {}
   for (const r of rdvs.value ?? []) {
     const id = r.profiles?.id ?? '?'
     groups[id] ??= { nom: displayName(r.profiles?.nom), rdvs: [] }

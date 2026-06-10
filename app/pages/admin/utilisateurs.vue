@@ -1,8 +1,17 @@
 <script setup lang="ts">
 import { ROLES, type UserRole } from '~~/shared/types'
 
+interface AdminUser {
+  id: string
+  nom: string
+  email: string | null
+  role: UserRole
+  actif: boolean
+  google_calendar_connected: boolean
+}
+
 const { data: users, refresh } = await useAsyncData('admin-users', () =>
-  $fetch<any[]>('/api/admin/users'))
+  $fetch<AdminUser[]>('/api/admin/users'))
 
 const form = reactive({ email: '', nom: '', role: 'commercial' as UserRole })
 const inviting = ref(false)
@@ -20,8 +29,8 @@ async function invite() {
     form.nom = ''
     refresh()
   }
-  catch (e: any) {
-    error.value = e?.data?.statusMessage ?? 'Erreur lors de l\'invitation'
+  catch (e: unknown) {
+    error.value = errorMessage(e, 'Erreur lors de l\'invitation')
   }
   inviting.value = false
 }

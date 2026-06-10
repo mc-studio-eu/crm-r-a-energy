@@ -83,7 +83,33 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
       <input v-model="filtreVille" type="search" placeholder="Ville ou CP" class="input">
     </div>
 
-    <div class="card overflow-x-auto !p-0">
+    <!-- Liste en cartes (mobile) -->
+    <div class="space-y-3 md:hidden">
+      <NuxtLink
+        v-for="p in data?.rows"
+        :key="p.id"
+        :to="`/prospects/${p.id}`"
+        class="card block !p-4"
+      >
+        <div class="flex items-start justify-between gap-2">
+          <span class="font-medium text-primary">{{ p.raison_sociale }}</span>
+          <StatusBadge :statut="p.statut" />
+        </div>
+        <p v-if="p.contact_nom || p.telephone" class="mt-1 text-sm text-gray-600">
+          {{ p.contact_nom }}<span v-if="p.telephone" class="text-gray-400"> · {{ p.telephone }}</span>
+        </p>
+        <p class="mt-1 text-xs text-gray-500">
+          <span v-if="p.ville">{{ p.ville }} {{ p.code_postal }}</span>
+          <span v-if="p.assigne_a" class="text-gray-400"> · {{ nomCommercial(p.assigne_a) }}</span>
+        </p>
+      </NuxtLink>
+      <p v-if="!data?.rows.length" class="card py-10 text-center text-gray-400">
+        Aucun prospect ne correspond aux filtres.
+      </p>
+    </div>
+
+    <!-- Tableau (desktop) -->
+    <div class="card hidden overflow-x-auto !p-0 md:block">
       <table class="table-base">
         <thead>
           <tr>
@@ -102,7 +128,11 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
                 {{ p.raison_sociale }}
               </NuxtLink>
             </td>
-            <td>{{ p.contact_nom }}<br><span class="text-xs text-gray-500">{{ p.telephone }}</span></td>
+            <td>
+              <span v-if="p.contact_nom">{{ p.contact_nom }}</span>
+              <span v-if="p.telephone" class="block text-xs text-gray-500">{{ p.telephone }}</span>
+              <span v-if="!p.contact_nom && !p.telephone" class="text-gray-300">—</span>
+            </td>
             <td>{{ p.ville }} <span class="text-xs text-gray-400">{{ p.code_postal }}</span></td>
             <td><StatusBadge :statut="p.statut" /></td>
             <td>{{ nomCommercial(p.assigne_a) }}</td>
