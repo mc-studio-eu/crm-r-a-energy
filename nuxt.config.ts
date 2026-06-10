@@ -18,6 +18,10 @@ export default defineNuxtConfig({
       callback: '/confirm',
       exclude: ['/login', '/mot-de-passe-oublie', '/reset-password'],
     },
+    cookieOptions: {
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    },
   },
 
   runtimeConfig: {

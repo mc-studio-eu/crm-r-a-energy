@@ -21,7 +21,7 @@ async function login() {
       : err.message
     return
   }
-  navigateTo('/')
+  await navigateTo('/', { replace: true })
 }
 </script>
 
