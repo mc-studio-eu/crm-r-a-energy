@@ -1,0 +1,33 @@
+{
+  "name": "crm-r-a-energy",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@nuxtjs/supabase": "^2.0.0",
+    "@supabase/supabase-js": "^2.49.0",
+    "@tailwindcss/vite": "^4.1.0",
+    "@vueuse/nuxt": "^13.0.0",
+    "nuxt": "^4.2.1",
+    "tailwindcss": "^4.1.0",
+    "typescript": "^5.9.3",
+    "vue": "^3.5.25",
+    "vue-router": "^4.6.3",
+    "zod": "^4.1.13"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.10.0",
+    "@types/node": "^24.10.1",
+    "eslint": "^9.39.1",
+    "vitest": "^3.1.0"
+  }
+}

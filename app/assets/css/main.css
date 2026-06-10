@@ -1,0 +1,56 @@
+@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@200..800&family=Poppins:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+/* Charte ra-energy.fr (ticket 09) */
+@theme {
+    --color-primary: #31694E;
+    --color-primary-dark: #24503B;
+    --color-secondary: #BBC863;
+    --color-secondary-light: rgba(187, 200, 99, 0.30);
+    --color-ink: #090909;
+    --color-app-bg: #FAFFF8;
+    --font-manrope: Manrope, sans-serif;
+    --font-poppins: Poppins, sans-serif;
+}
+
+body {
+    background-color: var(--color-app-bg);
+    font-family: var(--font-poppins);
+    color: var(--color-ink);
+}
+
+h1, h2, h3, h4 {
+    font-family: var(--font-manrope);
+    font-weight: 700;
+}
+
+/* Composants du design system */
+@layer components {
+    .btn-primary {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-primary-dark disabled:cursor-not-allowed disabled:opacity-50;
+    }
+    .btn-secondary {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg border border-primary/30 bg-white px-4 py-2 text-sm font-medium text-primary transition hover:bg-secondary-light disabled:opacity-50;
+    }
+    .btn-danger {
+        @apply inline-flex items-center justify-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:opacity-50;
+    }
+    .input {
+        @apply w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20;
+    }
+    .label {
+        @apply mb-1 block text-sm font-medium text-gray-700;
+    }
+    .card {
+        @apply rounded-xl border border-gray-200 bg-white p-5 shadow-sm;
+    }
+    .table-base {
+        @apply w-full text-left text-sm;
+    }
+    .table-base th {
+        @apply border-b border-gray-200 px-3 py-2 font-semibold text-gray-600;
+    }
+    .table-base td {
+        @apply border-b border-gray-100 px-3 py-2.5;
+    }
+}
