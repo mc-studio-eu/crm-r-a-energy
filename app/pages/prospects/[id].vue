@@ -114,7 +114,7 @@ function activiteLabel(a: any) {
             <div>
               <p class="font-medium">{{ fmtDate(r.debut) }}</p>
               <p class="text-xs text-gray-500">
-                {{ r.profiles?.nom }} · {{ r.lieu }}
+                {{ displayName(r.profiles?.nom) }} · {{ r.lieu }}
                 <span v-if="r.temps_trajet_min"> · trajet {{ r.temps_trajet_min }} min</span>
               </p>
             </div>
@@ -134,7 +134,7 @@ function activiteLabel(a: any) {
         <li v-for="a in activites" :key="a.id" class="flex gap-3">
           <span class="shrink-0 text-xs text-gray-400">{{ fmtDate(a.created_at) }}</span>
           <span>{{ activiteLabel(a) }}</span>
-          <span class="text-xs text-gray-400">{{ a.profiles?.nom }}</span>
+          <span class="text-xs text-gray-400">{{ displayName(a.profiles?.nom) }}</span>
         </li>
         <li v-if="!activites?.length" class="text-gray-400">Aucune activité.</li>
       </ul>

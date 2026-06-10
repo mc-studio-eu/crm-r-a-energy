@@ -16,6 +16,7 @@ const nav = computed(() => [
   { to: '/prospects', label: 'Prospects', show: true },
   { to: '/rdv', label: 'Mes RDV', show: profile.value?.role === 'commercial' },
   { to: '/planning', label: 'Planning', show: isStaff.value },
+  { to: '/carte', label: 'Carte des RDV', show: isStaff.value },
   { to: '/admin/utilisateurs', label: 'Équipe', show: isAdmin.value },
   { to: '/admin/parametres', label: 'Paramètres', show: isAdmin.value },
 ].filter(i => i.show))
@@ -42,7 +43,7 @@ const nav = computed(() => [
       </nav>
       <div class="border-t border-white/10 p-4">
         <NuxtLink to="/profil" class="block truncate text-sm font-medium hover:underline">
-          {{ profile?.nom || 'Mon profil' }}
+          {{ profile?.nom ? displayName(profile.nom) : 'Mon profil' }}
         </NuxtLink>
         <p class="text-xs text-white/60 capitalize">{{ profile?.role }}</p>
         <button class="mt-2 text-xs text-white/70 hover:text-white" @click="logout">
@@ -54,7 +55,7 @@ const nav = computed(() => [
     <!-- Header mobile -->
     <header class="fixed inset-x-0 top-0 z-10 flex items-center justify-between bg-primary px-4 py-3 text-white md:hidden">
       <span class="font-bold">R&A Energy CRM</span>
-      <NuxtLink to="/profil" class="text-sm">{{ profile?.nom }}</NuxtLink>
+      <NuxtLink to="/profil" class="text-sm">{{ displayName(profile?.nom) }}</NuxtLink>
     </header>
 
     <main class="flex-1 px-4 pb-10 pt-16 md:ml-60 md:px-8 md:pt-8">

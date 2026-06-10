@@ -128,7 +128,7 @@ async function save() {
         <label class="label">Commercial assigné</label>
         <select v-model="form.assigne_a" class="input">
           <option value="">Non assigné</option>
-          <option v-for="c in commerciaux" :key="c.id" :value="c.id">{{ c.nom }}</option>
+          <option v-for="c in commerciaux" :key="c.id" :value="c.id">{{ displayName(c.nom) }}</option>
         </select>
       </div>
       <div class="md:col-span-2">

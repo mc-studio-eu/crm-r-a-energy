@@ -28,7 +28,7 @@ const parCommercial = computed(() => {
   const groups: Record<string, { nom: string, rdvs: any[] }> = {}
   for (const r of rdvs.value ?? []) {
     const id = r.profiles?.id ?? '?'
-    groups[id] ??= { nom: r.profiles?.nom ?? 'Inconnu', rdvs: [] }
+    groups[id] ??= { nom: displayName(r.profiles?.nom), rdvs: [] }
     groups[id].rdvs.push(r)
   }
   return groups

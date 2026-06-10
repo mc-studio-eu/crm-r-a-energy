@@ -114,7 +114,7 @@ async function save() {
         <select v-model="form.commercial_id" required class="input">
           <option value="" disabled>Choisir…</option>
           <option v-for="c in commerciaux" :key="c.id" :value="c.id">
-            {{ c.nom }}{{ c.google_calendar_connected ? '' : ' (agenda non connecté)' }}
+            {{ displayName(c.nom) }}{{ c.google_calendar_connected ? '' : ' (agenda non connecté)' }}
           </option>
         </select>
       </div>

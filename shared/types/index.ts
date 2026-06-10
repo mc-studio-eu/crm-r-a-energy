@@ -12,6 +12,15 @@ export const PROSPECT_STATUTS: Record<ProspectStatut, string> = {
   perdu: 'Perdu',
 }
 
+/** Couleurs hex des statuts prospect — utilisées par les graphiques du dashboard. */
+export const PROSPECT_STATUT_COLORS: Record<ProspectStatut, string> = {
+  nouveau: '#3B82F6',
+  a_rappeler: '#F59E0B',
+  rdv_place: '#BBC863',
+  signe: '#31694E',
+  perdu: '#9CA3AF',
+}
+
 export const RDV_STATUTS: Record<RdvStatut, string> = {
   planifie: 'Planifié',
   honore: 'Honoré',

@@ -53,7 +53,7 @@ watchDebounced([search, filtreVille], () => {
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.count ?? 0) / PAGE_SIZE)))
 
 const nomCommercial = (id: string | null) =>
-  commerciaux.value?.find(c => c.id === id)?.nom ?? '—'
+  displayName(commerciaux.value?.find(c => c.id === id)?.nom)
 
 /** Changement de statut en 1 clic depuis la liste (historisé par trigger BDD). */
 async function setStatut(prospect: Prospect, statut: ProspectStatut) {
@@ -78,7 +78,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
       </select>
       <select v-model="filtreCommercial" class="input">
         <option value="">Tous les commerciaux</option>
-        <option v-for="c in commerciaux" :key="c.id" :value="c.id">{{ c.nom }}</option>
+        <option v-for="c in commerciaux" :key="c.id" :value="c.id">{{ displayName(c.nom) }}</option>
       </select>
       <input v-model="filtreVille" type="search" placeholder="Ville ou CP" class="input">
     </div>
