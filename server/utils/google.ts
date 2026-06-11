@@ -57,7 +57,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
   catch {
     throw createError({
       statusCode: 409,
-      statusMessage: 'Agenda Google non connecté ou autorisation expirée',
+      message: 'Agenda Google non connecté ou autorisation expirée',
     })
   }
 }
@@ -155,7 +155,7 @@ export async function getDriveTimeMinutes(
 
   const duration = res.routes?.[0]?.duration // ex. "1234s"
   if (!duration) {
-    throw createError({ statusCode: 502, statusMessage: 'Itinéraire introuvable' })
+    throw createError({ statusCode: 502, message: 'Itinéraire introuvable' })
   }
   const minutes = Math.ceil(Number.parseInt(duration) / 60)
   routeCache.set(key, { value: minutes, expires: Date.now() + ROUTE_CACHE_TTL_MS })

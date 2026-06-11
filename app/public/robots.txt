@@ -1,0 +1,9 @@
+# Robots.txt pour R&A Energy
+# https://ra-energy.fr
+
+User-Agent: *
+Allow: /
+Disallow: /api/
+
+# Sitemap
+Sitemap: https://ra-energy.fr/sitemap.xml

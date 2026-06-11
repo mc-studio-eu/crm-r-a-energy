@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
     data: { nom: body.nom, role: body.role },
     redirectTo: `${config.public.appUrl}/reset-password`,
   })
-  if (error) throw createError({ statusCode: 400, statusMessage: error.message })
+  if (error) throw createError({ statusCode: 400, message: error.message })
 
   return { id: data.user.id, email: body.email }
 })

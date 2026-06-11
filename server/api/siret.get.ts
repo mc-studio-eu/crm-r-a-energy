@@ -28,7 +28,7 @@ export default defineEventHandler(async (event) => {
 
   const result = data?.results?.[0]
   if (!result) {
-    throw createError({ statusCode: 404, statusMessage: 'SIRET introuvable' })
+    throw createError({ statusCode: 404, message: 'SIRET introuvable' })
   }
 
   const etab = result.matching_etablissements?.find(e => e.siret === siret)

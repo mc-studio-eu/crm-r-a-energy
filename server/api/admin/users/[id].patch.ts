@@ -13,12 +13,12 @@ export default defineEventHandler(async (event) => {
   const body = bodySchema.parse(await readBody(event))
 
   if (id === me.id && body.actif === false) {
-    throw createError({ statusCode: 400, statusMessage: 'Impossible de désactiver son propre compte' })
+    throw createError({ statusCode: 400, message: 'Impossible de désactiver son propre compte' })
   }
 
   const admin = supabaseAdmin()
   const { error } = await admin.from('profiles').update(body).eq('id', id)
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (error) throw createError({ statusCode: 500, message: error.message })
 
   // Un compte désactivé ne peut plus se connecter : on bannit côté auth.
   if (body.actif !== undefined) {

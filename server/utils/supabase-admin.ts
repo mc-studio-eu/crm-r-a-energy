@@ -17,7 +17,7 @@ export function supabaseAdmin() {
 export async function requireRole(event: H3Event, roles?: UserRole[]) {
   const user = await serverSupabaseUser(event)
   if (!user) {
-    throw createError({ statusCode: 401, statusMessage: 'Non authentifié' })
+    throw createError({ statusCode: 401, message: 'Non authentifié' })
   }
   const admin = supabaseAdmin()
   const { data: profile } = await admin
@@ -27,10 +27,10 @@ export async function requireRole(event: H3Event, roles?: UserRole[]) {
     .single()
 
   if (!profile || !profile.actif) {
-    throw createError({ statusCode: 403, statusMessage: 'Compte désactivé' })
+    throw createError({ statusCode: 403, message: 'Compte désactivé' })
   }
   if (roles && !roles.includes(profile.role)) {
-    throw createError({ statusCode: 403, statusMessage: 'Accès refusé pour ce rôle' })
+    throw createError({ statusCode: 403, message: 'Accès refusé pour ce rôle' })
   }
   return profile
 }

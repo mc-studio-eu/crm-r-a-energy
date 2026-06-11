@@ -22,11 +22,11 @@ export default defineEventHandler(async (event) => {
     .select('*, prospects(raison_sociale)')
     .eq('id', id)
     .single()
-  if (!rdv) throw createError({ statusCode: 404, statusMessage: 'RDV introuvable' })
+  if (!rdv) throw createError({ statusCode: 404, message: 'RDV introuvable' })
 
   // Un commercial ne modifie que ses propres RDV (les staff modifient tout)
   if (me.role === 'commercial' && rdv.commercial_id !== me.id) {
-    throw createError({ statusCode: 403, statusMessage: 'Accès refusé' })
+    throw createError({ statusCode: 403, message: 'Accès refusé' })
   }
 
   // Re-check si le créneau change
@@ -42,12 +42,12 @@ export default defineEventHandler(async (event) => {
       excludeRdvId: id,
     })
     if (!checks.ok) {
-      throw createError({ statusCode: 422, statusMessage: 'Créneau refusé', data: checks })
+      throw createError({ statusCode: 422, message: 'Créneau refusé', data: checks })
     }
   }
 
   const { error } = await admin.from('rdv').update(body).eq('id', id)
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (error) throw createError({ statusCode: 500, message: error.message })
 
   // Sync Google Calendar
   if (rdv.google_event_id) {

@@ -25,7 +25,7 @@ export async function runRdvChecks(params: RdvCheckParams): Promise<RdvCheckResu
     .eq('id', params.commercialId)
     .single()
   if (!commercial) {
-    throw createError({ statusCode: 404, statusMessage: 'Commercial introuvable' })
+    throw createError({ statusCode: 404, message: 'Commercial introuvable' })
   }
 
   // Marge paramétrable (admin)

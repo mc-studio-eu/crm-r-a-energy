@@ -34,6 +34,48 @@ const geocodeWarning = ref('')
 const siretLoading = ref(false)
 const siretError = ref('')
 
+interface EntrepriseSuggestion {
+  raison_sociale: string
+  siret: string
+  adresse: string
+  code_postal: string
+  ville: string
+}
+const entrepriseSuggestions = ref<EntrepriseSuggestion[]>([])
+const entrepriseOpen = ref(false)
+let entrepriseTimer: ReturnType<typeof setTimeout> | null = null
+
+function onRaisonSocialeInput() {
+  if (entrepriseTimer) clearTimeout(entrepriseTimer)
+  const q = form.raison_sociale.trim()
+  if (q.length < 3) {
+    entrepriseSuggestions.value = []
+    entrepriseOpen.value = false
+    return
+  }
+  entrepriseTimer = setTimeout(async () => {
+    try {
+      entrepriseSuggestions.value = await $fetch('/api/entreprise', { query: { q } })
+      entrepriseOpen.value = entrepriseSuggestions.value.length > 0
+    }
+    catch {
+      entrepriseSuggestions.value = []
+      entrepriseOpen.value = false
+    }
+  }, 250)
+}
+
+function choisirEntreprise(s: EntrepriseSuggestion) {
+  form.raison_sociale = s.raison_sociale
+  if (s.siret) form.siret = s.siret
+  if (s.adresse) form.adresse = s.adresse
+  if (s.code_postal) form.code_postal = s.code_postal
+  if (s.ville) form.ville = s.ville
+  adresseCoords.value = null
+  entrepriseOpen.value = false
+  entrepriseSuggestions.value = []
+}
+
 interface AdresseSuggestion {
   label: string
   adresse: string
@@ -162,9 +204,23 @@ async function save() {
 <template>
   <form class="space-y-4" @submit.prevent="save">
     <div class="grid gap-4 md:grid-cols-2">
-      <div>
+      <div class="relative">
         <label class="label">Raison sociale *</label>
-        <input v-model="form.raison_sociale" required class="input">
+        <input
+          v-model="form.raison_sociale" required class="input" autocomplete="off"
+          @input="onRaisonSocialeInput" @focus="onRaisonSocialeInput"
+          @blur="() => setTimeout(() => entrepriseOpen = false, 150)"
+        >
+        <ul v-if="entrepriseOpen" class="absolute z-10 mt-1 w-full overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+          <li
+            v-for="s in entrepriseSuggestions" :key="s.siret || s.raison_sociale"
+            class="cursor-pointer px-3 py-2 text-sm hover:bg-gray-100"
+            @mousedown.prevent="choisirEntreprise(s)"
+          >
+            <span class="font-medium">{{ s.raison_sociale }}</span>
+            <span v-if="s.code_postal || s.ville" class="block text-xs text-gray-500">{{ s.code_postal }} {{ s.ville }}</span>
+          </li>
+        </ul>
       </div>
       <div>
         <label class="label">SIRET</label>

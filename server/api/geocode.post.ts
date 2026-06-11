@@ -8,7 +8,7 @@ export default defineEventHandler(async (event) => {
   const { adresse } = bodySchema.parse(await readBody(event))
   const result = await geocodeAddress(adresse)
   if (!result) {
-    throw createError({ statusCode: 422, statusMessage: 'Adresse introuvable' })
+    throw createError({ statusCode: 422, message: 'Adresse introuvable' })
   }
   return result
 })

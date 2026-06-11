@@ -30,7 +30,7 @@ export default defineEventHandler(async (event) => {
     lieuLng: body.lieu_lng,
   })
   if (!checks.ok) {
-    throw createError({ statusCode: 422, statusMessage: 'Créneau refusé', data: checks })
+    throw createError({ statusCode: 422, message: 'Créneau refusé', data: checks })
   }
 
   const { data: prospect } = await admin
@@ -46,7 +46,7 @@ export default defineEventHandler(async (event) => {
     })
     .select()
     .single()
-  if (error) throw createError({ statusCode: 500, statusMessage: error.message })
+  if (error) throw createError({ statusCode: 500, message: error.message })
 
   // Event Google Calendar (non bloquant si l'agenda n'est pas connecté)
   const { data: commercial } = await admin
