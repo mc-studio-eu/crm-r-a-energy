@@ -39,7 +39,7 @@ async function login() {
         </div>
         <div>
           <label class="label" for="password">Mot de passe</label>
-          <input id="password" v-model="password" type="password" required class="input" autocomplete="current-password">
+          <PasswordInput id="password" v-model="password" autocomplete="current-password" />
         </div>
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
         <button type="submit" class="btn-primary w-full" :disabled="loading">

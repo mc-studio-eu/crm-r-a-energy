@@ -45,6 +45,11 @@ async function archiver() {
   navigateTo('/prospects')
 }
 
+async function restaurer() {
+  await supabase.from('prospects').update({ archive: false }).eq('id', id)
+  refresh()
+}
+
 function fmtDate(d: string) {
   return new Date(d).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' })
 }
@@ -72,6 +77,7 @@ function activiteLabel(a: Activite) {
         <h1 class="text-2xl">{{ prospect.raison_sociale }}</h1>
         <div class="mt-1 flex items-center gap-2">
           <StatusBadge :statut="prospect.statut" />
+          <span v-if="prospect.archive" class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Archivé</span>
           <span v-if="prospect.siret" class="text-xs text-gray-400">SIRET {{ prospect.siret }}</span>
         </div>
       </div>
@@ -84,7 +90,8 @@ function activiteLabel(a: Activite) {
           <option v-for="(label, s) in PROSPECT_STATUTS" :key="s" :value="s">{{ label }}</option>
         </select>
         <button class="btn-secondary" @click="editing = !editing">{{ editing ? 'Annuler' : 'Modifier' }}</button>
-        <button v-if="isAdmin" class="btn-danger" @click="archiver">Archiver</button>
+        <button v-if="isAdmin && !prospect.archive" class="btn-danger" @click="archiver">Archiver</button>
+        <button v-if="isAdmin && prospect.archive" class="btn-secondary" @click="restaurer">Restaurer</button>
       </div>
     </div>
 

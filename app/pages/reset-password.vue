@@ -31,11 +31,11 @@ async function save() {
       <form class="space-y-4" @submit.prevent="save">
         <div>
           <label class="label" for="password">Nouveau mot de passe</label>
-          <input id="password" v-model="password" type="password" minlength="8" required class="input">
+          <PasswordInput id="password" v-model="password" :minlength="8" autocomplete="new-password" />
         </div>
         <div>
           <label class="label" for="confirm">Confirmation</label>
-          <input id="confirm" v-model="confirm" type="password" minlength="8" required class="input">
+          <PasswordInput id="confirm" v-model="confirm" :minlength="8" autocomplete="new-password" />
         </div>
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
         <button type="submit" class="btn-primary w-full" :disabled="loading">Enregistrer</button>

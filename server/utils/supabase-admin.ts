@@ -23,7 +23,8 @@ export async function requireRole(event: H3Event, roles?: UserRole[]) {
   const { data: profile } = await admin
     .from('profiles')
     .select('id, role, nom, actif, adresse_depart, depart_lat, depart_lng, google_calendar_connected')
-    .eq('id', user.id)
+    // serverSupabaseUser renvoie les claims JWT depuis @nuxtjs/supabase v2 : l'id est dans `sub`
+    .eq('id', user.sub)
     .single()
 
   if (!profile || !profile.actif) {

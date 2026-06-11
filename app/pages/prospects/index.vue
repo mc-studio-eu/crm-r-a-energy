@@ -2,7 +2,7 @@
 import { PROSPECT_STATUTS, type Prospect, type ProspectStatut } from '~~/shared/types'
 
 const supabase = useSupabaseClient()
-const { isStaff } = useProfile()
+const { isStaff, isAdmin } = useProfile()
 
 const PAGE_SIZE = 25
 const page = ref(1)
@@ -11,6 +11,7 @@ const filtreStatut = ref<ProspectStatut | ''>('')
 const filtreCommercial = ref('')
 const filtreVille = ref('')
 const tri = ref<'updated_at' | 'raison_sociale' | 'created_at'>('updated_at')
+const voirArchives = ref(false)
 
 const { data: commerciaux } = await useAsyncData('commerciaux', async () => {
   const { data } = await supabase
@@ -26,7 +27,7 @@ const { data, refresh } = await useAsyncData('prospects', async () => {
   let query = supabase
     .from('prospects')
     .select('*', { count: 'exact' })
-    .eq('archive', false)
+    .eq('archive', voirArchives.value)
 
   if (search.value) {
     query = query.or(`raison_sociale.ilike.%${search.value}%,contact_nom.ilike.%${search.value}%,siret.ilike.%${search.value}%`)
@@ -43,7 +44,7 @@ const { data, refresh } = await useAsyncData('prospects', async () => {
     .range(from, from + PAGE_SIZE - 1)
 
   return { rows: (rows ?? []) as Prospect[], count: count ?? 0 }
-}, { watch: [page, filtreStatut, filtreCommercial, tri] })
+}, { watch: [page, filtreStatut, filtreCommercial, tri, voirArchives] })
 
 watchDebounced([search, filtreVille], () => {
   page.value = 1
@@ -82,6 +83,11 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
       </select>
       <input v-model="filtreVille" type="search" placeholder="Ville ou CP" class="input">
     </div>
+
+    <label v-if="isAdmin" class="mb-4 flex w-fit cursor-pointer items-center gap-2 text-sm text-gray-600">
+      <input v-model="voirArchives" type="checkbox" class="accent-primary">
+      Voir les prospects archivés
+    </label>
 
     <!-- Liste en cartes (mobile) -->
     <div class="space-y-3 md:hidden">
