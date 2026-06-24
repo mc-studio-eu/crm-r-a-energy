@@ -40,8 +40,8 @@ export default defineNuxtConfig({
       title: 'CRM — R&A Energy',
       htmlAttrs: { lang: 'fr' },
       link: [
-        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-        { rel: 'shortcut icon', type: 'image/x-icon', href: '/favicon.ico' }
+        { rel: 'icon', href: '/favicon.ico' },
+        { rel: 'shortcut icon', href: '/favicon.ico' }
       ]
     },
   },
