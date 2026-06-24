@@ -7,6 +7,50 @@ const password = ref('')
 const confirm = ref('')
 const error = ref('')
 const loading = ref(false)
+const ready = ref(false)
+
+// Le lien d'invitation / reset arrive avec le token dans le hash de l'URL
+// (#access_token=...&refresh_token=...&type=recovery). On établit la session
+// à partir de ce token avant de pouvoir mettre à jour le mot de passe.
+onMounted(async () => {
+  // Si une session existe déjà (passage par /confirm), rien à faire.
+  const { data: { session } } = await supabase.auth.getSession()
+  if (session) {
+    ready.value = true
+    return
+  }
+
+  const hash = window.location.hash.startsWith('#')
+    ? window.location.hash.slice(1)
+    : window.location.hash
+  const params = new URLSearchParams(hash)
+  const accessToken = params.get('access_token')
+  const refreshToken = params.get('refresh_token')
+  const errorDescription = params.get('error_description')
+
+  if (errorDescription) {
+    error.value = decodeURIComponent(errorDescription)
+    return
+  }
+
+  if (!accessToken || !refreshToken) {
+    error.value = 'Lien invalide ou expiré. Veuillez redemander une invitation.'
+    return
+  }
+
+  const { error: err } = await supabase.auth.setSession({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+  })
+  if (err) {
+    error.value = err.message
+    return
+  }
+
+  // Nettoie le token de l'URL puis active le formulaire.
+  history.replaceState(null, '', window.location.pathname)
+  ready.value = true
+})
 
 async function save() {
   if (password.value !== confirm.value) {
@@ -38,7 +82,7 @@ async function save() {
           <PasswordInput id="confirm" v-model="confirm" :minlength="8" autocomplete="new-password" />
         </div>
         <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
-        <button type="submit" class="btn-primary w-full" :disabled="loading">Enregistrer</button>
+        <button type="submit" class="btn-primary w-full" :disabled="loading || !ready">Enregistrer</button>
       </form>
     </div>
   </div>
