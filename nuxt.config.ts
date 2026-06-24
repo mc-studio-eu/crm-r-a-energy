@@ -31,7 +31,7 @@ export default defineNuxtConfig({
     googleClientSecret: '',
     googleMapsApiKey: '',
     public: {
-      appUrl: 'http://localhost:3000',
+      appUrl: process.env.NUXT_PUBLIC_APP_URL,
     },
   },
 
