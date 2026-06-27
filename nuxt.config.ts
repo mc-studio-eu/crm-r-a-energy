@@ -17,6 +17,7 @@ export default defineNuxtConfig({
       login: '/login',
       callback: '/confirm',
       exclude: [
+        '/',
         '/login',
         '/mot-de-passe-oublie',
         '/reset-password',
