@@ -16,7 +16,13 @@ export default defineNuxtConfig({
     redirectOptions: {
       login: '/login',
       callback: '/confirm',
-      exclude: ['/login', '/mot-de-passe-oublie', '/reset-password'],
+      exclude: [
+        '/login',
+        '/mot-de-passe-oublie',
+        '/reset-password',
+        '/politique-de-confidentialite',
+        '/conditions-d-utilisation'
+      ],
     },
     cookieOptions: {
       sameSite: 'lax',
