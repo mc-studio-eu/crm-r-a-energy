@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { ROLES } from '~~/shared/types'
+
 const { profile, load, isAdmin, isStaff } = useProfile()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
@@ -18,7 +20,7 @@ type NavItem = { to: string, label: string, show: boolean, icon: string }
 const nav = computed<NavItem[]>(() => [
   { to: '/', label: 'Tableau de bord', show: true, icon: 'home' },
   { to: '/prospects', label: 'Prospects', show: true, icon: 'users' },
-  { to: '/rdv', label: 'Mes RDV', show: profile.value?.role === 'commercial', icon: 'calendar' },
+  { to: '/rdv', label: 'Mes RDV', show: profile.value?.role === 'commercial' || profile.value?.role === 'regie_interne', icon: 'calendar' },
   { to: '/planning', label: 'Planning', show: isStaff.value, icon: 'calendar' },
   { to: '/carte', label: 'Carte des RDV', show: isStaff.value, icon: 'map' },
   { to: '/admin/utilisateurs', label: 'Équipe', show: isAdmin.value, icon: 'team' },
@@ -62,7 +64,7 @@ watch(() => route.path, () => { sheetOpen.value = false })
         <NuxtLink to="/profil" class="block truncate text-sm font-medium hover:underline">
           {{ profile?.nom ? displayName(profile.nom) : 'Mon profil' }}
         </NuxtLink>
-        <p class="text-xs text-white/60 capitalize">{{ profile?.role }}</p>
+        <p class="text-xs text-white/60">{{ profile?.role ? ROLES[profile.role] : '' }}</p>
         <button class="mt-2 text-xs text-white/70 hover:text-white" @click="logout">
           Se déconnecter
         </button>
@@ -133,7 +135,7 @@ watch(() => route.path, () => { sheetOpen.value = false })
             >
               <NavIcon name="user" />
               {{ profile?.nom ? displayName(profile.nom) : 'Mon profil' }}
-              <span class="ml-auto text-xs font-normal capitalize text-gray-400">{{ profile?.role }}</span>
+              <span class="ml-auto text-xs font-normal text-gray-400">{{ profile?.role ? ROLES[profile.role] : '' }}</span>
             </NuxtLink>
             <button
               type="button"

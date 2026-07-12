@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { PROSPECT_STATUTS, type Prospect, type ProspectStatut } from '~~/shared/types'
+import { ASSIGNABLE_ROLES, PROSPECT_STATUTS, type Prospect, type ProspectStatut } from '~~/shared/types'
 
 const supabase = useSupabaseClient()
-const { isStaff, isAdmin } = useProfile()
+const { isStaff, isAdmin, isRegie } = useProfile()
 
 const PAGE_SIZE = 25
 const page = ref(1)
@@ -17,7 +17,7 @@ const { data: commerciaux } = await useAsyncData('commerciaux', async () => {
   const { data } = await supabase
     .from('profiles')
     .select('id, nom')
-    .eq('role', 'commercial')
+    .in('role', ASSIGNABLE_ROLES)
     .eq('actif', true)
     .order('nom')
   return data ?? []
@@ -67,7 +67,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
   <div>
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
       <h1 class="text-2xl">Prospects <span class="text-base font-normal text-gray-400">({{ data?.count }})</span></h1>
-      <NuxtLink v-if="isStaff" to="/prospects/new" class="btn-primary">+ Nouveau prospect</NuxtLink>
+      <NuxtLink v-if="isStaff || isRegie" to="/prospects/new" class="btn-primary">+ Nouveau prospect</NuxtLink>
     </div>
 
     <!-- Filtres -->
@@ -78,7 +78,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
         <option v-for="(label, s) in PROSPECT_STATUTS" :key="s" :value="s">{{ label }}</option>
       </select>
       <select v-model="filtreCommercial" class="input">
-        <option value="">Tous les commerciaux</option>
+        <option value="">Tous les intervenants</option>
         <option v-for="c in commerciaux" :key="c.id" :value="c.id">{{ displayName(c.nom) }}</option>
       </select>
       <input v-model="filtreVille" type="search" placeholder="Ville ou CP" class="input">

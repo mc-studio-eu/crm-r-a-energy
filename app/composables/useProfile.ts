@@ -39,6 +39,7 @@ export function useProfile() {
 
   const isAdmin = computed(() => profile.value?.role === 'admin')
   const isStaff = computed(() => profile.value?.role === 'admin' || profile.value?.role === 'telepro')
+  const isRegie = computed(() => profile.value?.role === 'regie_interne' || profile.value?.role === 'regie_externe')
 
-  return { profile, load, isAdmin, isStaff }
+  return { profile, load, isAdmin, isStaff, isRegie }
 }

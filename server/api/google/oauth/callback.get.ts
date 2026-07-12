@@ -1,6 +1,6 @@
 /** Callback OAuth Google : stocke le refresh token du commercial (ticket 07). */
 export default defineEventHandler(async (event) => {
-  const me = await requireRole(event, ['commercial', 'admin'])
+  const me = await requireRole(event, ['commercial', 'admin', 'regie_interne'])
   const { code, state } = getQuery<{ code?: string, state?: string }>(event)
 
   if (!code || state !== me.id) {

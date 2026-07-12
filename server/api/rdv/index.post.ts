@@ -16,8 +16,13 @@ const bodySchema = z.object({
  * et création de l'événement dans le Google Agenda du commercial.
  */
 export default defineEventHandler(async (event) => {
-  const me = await requireRole(event, ['admin', 'telepro'])
+  const me = await requireRole(event, ['admin', 'telepro', 'regie_interne'])
   const body = bodySchema.parse(await readBody(event))
+
+  // La régie interne ne place des RDV que pour elle-même.
+  if (me.role === 'regie_interne' && body.commercial_id !== me.id) {
+    throw createError({ statusCode: 403, message: 'Accès refusé' })
+  }
   const admin = supabaseAdmin()
   const config = useRuntimeConfig()
 

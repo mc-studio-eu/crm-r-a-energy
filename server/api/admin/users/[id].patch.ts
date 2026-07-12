@@ -1,7 +1,7 @@
 import { z } from 'zod'
 
 const bodySchema = z.object({
-  role: z.enum(['admin', 'telepro', 'commercial']).optional(),
+  role: z.enum(['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe']).optional(),
   actif: z.boolean().optional(),
   nom: z.string().min(1).optional(),
 })

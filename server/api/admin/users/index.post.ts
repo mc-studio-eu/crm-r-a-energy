@@ -3,7 +3,7 @@ import { z } from 'zod'
 const bodySchema = z.object({
   email: z.string().email(),
   nom: z.string().min(1),
-  role: z.enum(['admin', 'telepro', 'commercial']),
+  role: z.enum(['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe']),
 })
 
 /** Création de compte salarié par l'admin uniquement — invitation par email (ticket 04). */

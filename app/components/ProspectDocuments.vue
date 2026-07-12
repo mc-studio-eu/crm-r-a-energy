@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import type { ProspectDocument } from '~~/shared/types'
 
-const props = defineProps<{ prospectId: string, canUpload: boolean }>()
+// La carte n'est affichée qu'aux rôles autorisés (admin / régie externe) :
+// le formulaire d'upload est donc toujours visible ici, la RLS fait foi côté base.
+const props = defineProps<{ prospectId: string }>()
 // Émis à chaque action tracée dans l'historique, pour que la page le rafraîchisse.
 const emit = defineEmits<{ activite: [] }>()
 
@@ -133,7 +135,7 @@ function fmtDate(d: string) {
   <div class="card">
     <h2 class="mb-3 text-base">Documents</h2>
 
-    <form v-if="canUpload" class="mb-4 space-y-2" @submit.prevent="upload">
+    <form class="mb-4 space-y-2" @submit.prevent="upload">
       <div class="flex flex-wrap gap-2">
         <input
           ref="fileInput" type="file" class="input !w-auto flex-1 text-sm"

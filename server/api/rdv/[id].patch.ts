@@ -24,8 +24,8 @@ export default defineEventHandler(async (event) => {
     .single()
   if (!rdv) throw createError({ statusCode: 404, message: 'RDV introuvable' })
 
-  // Un commercial ne modifie que ses propres RDV (les staff modifient tout)
-  if (me.role === 'commercial' && rdv.commercial_id !== me.id) {
+  // Seul le staff modifie les RDV des autres ; les autres rôles uniquement les leurs.
+  if (!['admin', 'telepro'].includes(me.role) && rdv.commercial_id !== me.id) {
     throw createError({ statusCode: 403, message: 'Accès refusé' })
   }
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Prospect } from '~~/shared/types'
+import { ASSIGNABLE_ROLES, type Prospect } from '~~/shared/types'
 
 const props = defineProps<{ prospect?: Prospect | null }>()
 const emit = defineEmits<{ saved: [id: string] }>()
@@ -23,7 +23,7 @@ const form = reactive({
 
 const { data: commerciaux } = await useAsyncData('form-commerciaux', async () => {
   const { data } = await supabase
-    .from('profiles').select('id, nom').eq('role', 'commercial').eq('actif', true).order('nom')
+    .from('profiles').select('id, nom').in('role', ASSIGNABLE_ROLES).eq('actif', true).order('nom')
   return data ?? []
 })
 

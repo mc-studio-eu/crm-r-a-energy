@@ -4,7 +4,7 @@ import { PROSPECT_STATUTS, RDV_STATUTS, type Prospect, type ProspectStatut } fro
 const route = useRoute()
 const supabase = useSupabaseClient()
 const userId = useUserId()
-const { isStaff, isAdmin } = useProfile()
+const { profile, isStaff, isAdmin } = useProfile()
 
 const id = route.params.id as string
 const editing = ref(false)
@@ -74,7 +74,10 @@ async function ajouterCommentaire() {
   refreshActivites()
 }
 
-const canUpload = computed(() => isStaff.value || prospect.value?.assigne_a === userId.value)
+// Régie interne : toute fiche qu'elle peut ouvrir est la sienne (RLS), elle peut y placer ses RDV.
+const peutPrendreRdv = computed(() => isStaff.value || profile.value?.role === 'regie_interne')
+// Documents : admins + régie externe uniquement (règle client).
+const voitDocuments = computed(() => isAdmin.value || profile.value?.role === 'regie_externe')
 
 async function setStatut(statut: ProspectStatut) {
   await supabase.from('prospects').update({ statut }).eq('id', id)
@@ -159,7 +162,7 @@ function activiteLabel(a: Activite) {
       <div class="card lg:col-span-2">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-base">Rendez-vous</h2>
-          <button v-if="isStaff" class="btn-primary !px-3 !py-1.5 text-xs" @click="showRdvForm = !showRdvForm">
+          <button v-if="peutPrendreRdv" class="btn-primary !px-3 !py-1.5 text-xs" @click="showRdvForm = !showRdvForm">
             {{ showRdvForm ? 'Fermer' : '+ Prendre un RDV' }}
           </button>
         </div>
@@ -217,7 +220,7 @@ function activiteLabel(a: Activite) {
       </div>
 
       <!-- Documents -->
-      <ProspectDocuments :prospect-id="id" :can-upload="canUpload" @activite="refreshActivites()" />
+      <ProspectDocuments v-if="voitDocuments" :prospect-id="id" @activite="refreshActivites()" />
     </div>
 
     <!-- Historique -->

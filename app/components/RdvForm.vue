@@ -1,23 +1,28 @@
 <script setup lang="ts">
-import type { Prospect, RdvCheckResult } from '~~/shared/types'
+import { ASSIGNABLE_ROLES, type Prospect, type RdvCheckResult } from '~~/shared/types'
 
 const props = defineProps<{ prospect: Prospect }>()
 const emit = defineEmits<{ created: [] }>()
 
 const supabase = useSupabaseClient()
+const { profile } = useProfile()
+const userId = useUserId()
+
+// La régie interne ne place des RDV que pour elle-même : intervenant verrouillé.
+const isRegieInterne = computed(() => profile.value?.role === 'regie_interne')
 
 const { data: commerciaux } = await useAsyncData('rdv-commerciaux', async () => {
   const { data } = await supabase
     .from('profiles')
     .select('id, nom, google_calendar_connected')
-    .eq('role', 'commercial')
+    .in('role', ASSIGNABLE_ROLES)
     .eq('actif', true)
     .order('nom')
   return data ?? []
 })
 
 const form = reactive({
-  commercial_id: props.prospect.assigne_a ?? '',
+  commercial_id: isRegieInterne.value ? (userId.value ?? '') : (props.prospect.assigne_a ?? ''),
   date: '',
   heure: '10:00',
   duree: 60,
@@ -110,8 +115,8 @@ async function save() {
     </div>
 
     <div class="grid gap-4 md:grid-cols-2">
-      <div class="md:col-span-2">
-        <label class="label">Commercial assigné *</label>
+      <div v-if="!isRegieInterne" class="md:col-span-2">
+        <label class="label">Intervenant *</label>
         <select v-model="form.commercial_id" required class="input">
           <option value="" disabled>Choisir…</option>
           <option v-for="c in commerciaux" :key="c.id" :value="c.id">

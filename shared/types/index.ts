@@ -1,4 +1,4 @@
-export type UserRole = 'admin' | 'telepro' | 'commercial'
+export type UserRole = 'admin' | 'telepro' | 'commercial' | 'regie_interne' | 'regie_externe'
 
 export type ProspectStatut = 'nouveau' | 'a_rappeler' | 'rdv_place' | 'signe' | 'perdu'
 
@@ -32,7 +32,12 @@ export const ROLES: Record<UserRole, string> = {
   admin: 'Admin',
   telepro: 'Télépro',
   commercial: 'Commercial',
+  regie_interne: 'Régie interne',
+  regie_externe: 'Régie externe',
 }
+
+/** Rôles assignables à un prospect / RDV (dropdowns d'assignation). */
+export const ASSIGNABLE_ROLES: UserRole[] = ['commercial', 'regie_interne', 'regie_externe']
 
 export interface Profile {
   id: string

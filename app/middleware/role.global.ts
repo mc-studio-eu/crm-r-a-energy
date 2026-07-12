@@ -5,9 +5,10 @@
  */
 const ROLE_RULES: { prefix: string, roles: string[] }[] = [
   { prefix: '/admin', roles: ['admin'] },
-  { prefix: '/prospects', roles: ['admin', 'telepro', 'commercial'] },
+  { prefix: '/prospects', roles: ['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe'] },
   { prefix: '/planning', roles: ['admin', 'telepro'] },
-  { prefix: '/rdv', roles: ['admin', 'telepro', 'commercial'] },
+  { prefix: '/carte', roles: ['admin', 'telepro'] },
+  { prefix: '/rdv', roles: ['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe'] },
 ]
 
 export default defineNuxtRouteMiddleware(async (to) => {
