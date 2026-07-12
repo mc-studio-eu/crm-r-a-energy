@@ -68,6 +68,17 @@ export interface Prospect {
   updated_at: string
 }
 
+export interface ProspectDocument {
+  id: string
+  prospect_id: string
+  nom: string
+  storage_path: string
+  mime_type: string | null
+  taille: number | null
+  uploade_par: string | null
+  created_at: string
+}
+
 export interface Rdv {
   id: string
   prospect_id: string

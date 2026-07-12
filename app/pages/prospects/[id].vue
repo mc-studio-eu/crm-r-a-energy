@@ -3,6 +3,7 @@ import { PROSPECT_STATUTS, RDV_STATUTS, type Prospect, type ProspectStatut } fro
 
 const route = useRoute()
 const supabase = useSupabaseClient()
+const userId = useUserId()
 const { isStaff, isAdmin } = useProfile()
 
 const id = route.params.id as string
@@ -32,6 +33,48 @@ const { data: activites, refresh: refreshActivites } = await useAsyncData(`activ
     .limit(50)
   return data ?? []
 })
+
+// Commentaires : stockés dans prospect_activites (type 'commentaire'),
+// affichés dans leur propre carte et exclus de l'historique.
+const commentaires = computed(() => (activites.value ?? []).filter(a => a.type === 'commentaire'))
+const historique = computed(() => (activites.value ?? []).filter(a => a.type !== 'commentaire'))
+
+const COMMENTAIRES_PAR_PAGE = 5
+const pageCommentaires = ref(1)
+const totalPagesCommentaires = computed(() => Math.max(1, Math.ceil(commentaires.value.length / COMMENTAIRES_PAR_PAGE)))
+const commentairesPagines = computed(() =>
+  commentaires.value.slice((pageCommentaires.value - 1) * COMMENTAIRES_PAR_PAGE, pageCommentaires.value * COMMENTAIRES_PAR_PAGE),
+)
+watch(totalPagesCommentaires, (total) => {
+  if (pageCommentaires.value > total) pageCommentaires.value = total
+})
+
+const nouveauCommentaire = ref('')
+const envoiCommentaire = ref(false)
+const erreurCommentaire = ref('')
+
+async function ajouterCommentaire() {
+  const texte = nouveauCommentaire.value.trim()
+  if (!texte) return
+  envoiCommentaire.value = true
+  erreurCommentaire.value = ''
+  const { error } = await supabase.from('prospect_activites').insert({
+    prospect_id: id,
+    auteur_id: userId.value,
+    type: 'commentaire',
+    detail: texte,
+  })
+  envoiCommentaire.value = false
+  if (error) {
+    erreurCommentaire.value = error.message
+    return
+  }
+  nouveauCommentaire.value = ''
+  pageCommentaires.value = 1
+  refreshActivites()
+}
+
+const canUpload = computed(() => isStaff.value || prospect.value?.assigne_a === userId.value)
 
 async function setStatut(statut: ProspectStatut) {
   await supabase.from('prospects').update({ statut }).eq('id', id)
@@ -141,16 +184,57 @@ function activiteLabel(a: Activite) {
       </div>
     </div>
 
+    <div class="mt-6 grid gap-6 lg:grid-cols-2">
+      <!-- Commentaires -->
+      <div class="card">
+        <h2 class="mb-3 text-base">Commentaires</h2>
+        <form class="mb-4 space-y-2" @submit.prevent="ajouterCommentaire">
+          <textarea
+            v-model="nouveauCommentaire" rows="2" class="input"
+            placeholder="Ajouter un commentaire sur la fiche…"
+          />
+          <button type="submit" class="btn-primary !px-3 !py-1.5 text-xs" :disabled="envoiCommentaire || !nouveauCommentaire.trim()">
+            {{ envoiCommentaire ? 'Envoi…' : 'Commenter' }}
+          </button>
+          <p v-if="erreurCommentaire" class="text-sm text-red-600">{{ erreurCommentaire }}</p>
+        </form>
+        <ul class="space-y-3 text-sm">
+          <li v-for="c in commentairesPagines" :key="c.id" class="rounded-lg border border-gray-100 p-3">
+            <p class="whitespace-pre-wrap">{{ c.detail }}</p>
+            <p class="mt-1 text-xs text-gray-400">{{ displayName(c.profiles?.nom) }} · {{ fmtDate(c.created_at) }}</p>
+          </li>
+          <li v-if="!commentaires.length" class="py-4 text-center text-gray-400">Aucun commentaire.</li>
+        </ul>
+        <div v-if="totalPagesCommentaires > 1" class="mt-4 flex items-center justify-between text-xs">
+          <button class="btn-secondary !px-3 !py-1.5" :disabled="pageCommentaires <= 1" @click="pageCommentaires--">
+            ← Précédent
+          </button>
+          <span class="text-gray-400">Page {{ pageCommentaires }} / {{ totalPagesCommentaires }}</span>
+          <button class="btn-secondary !px-3 !py-1.5" :disabled="pageCommentaires >= totalPagesCommentaires" @click="pageCommentaires++">
+            Suivant →
+          </button>
+        </div>
+      </div>
+
+      <!-- Documents -->
+      <ProspectDocuments :prospect-id="id" :can-upload="canUpload" @activite="refreshActivites()" />
+    </div>
+
     <!-- Historique -->
     <div class="card mt-6">
       <h2 class="mb-3 text-base">Historique d'activité</h2>
-      <ul class="space-y-1.5 text-sm">
-        <li v-for="a in activites" :key="a.id" class="flex gap-3">
-          <span class="shrink-0 text-xs text-gray-400">{{ fmtDate(a.created_at) }}</span>
+      <div class="grid grid-cols-[10rem_1fr_10rem] gap-3 border-b border-gray-100 pb-2 text-xs font-medium uppercase tracking-wide text-gray-400">
+        <span>Date</span>
+        <span>Action</span>
+        <span>Auteur</span>
+      </div>
+      <ul class="mt-2 space-y-1.5 text-sm">
+        <li v-for="a in historique" :key="a.id" class="grid grid-cols-[10rem_1fr_10rem] gap-3">
+          <span class="text-xs text-gray-400">{{ fmtDate(a.created_at) }}</span>
           <span>{{ activiteLabel(a) }}</span>
           <span class="text-xs text-gray-400">{{ displayName(a.profiles?.nom) }}</span>
         </li>
-        <li v-if="!activites?.length" class="text-gray-400">Aucune activité.</li>
+        <li v-if="!historique.length" class="text-gray-400">Aucune activité.</li>
       </ul>
     </div>
   </div>

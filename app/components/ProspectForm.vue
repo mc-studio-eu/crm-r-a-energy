@@ -5,7 +5,7 @@ const props = defineProps<{ prospect?: Prospect | null }>()
 const emit = defineEmits<{ saved: [id: string] }>()
 
 const supabase = useSupabaseClient()
-const user = useSupabaseUser()
+const userId = useUserId()
 
 const form = reactive({
   raison_sociale: props.prospect?.raison_sociale ?? '',
@@ -185,13 +185,13 @@ async function save() {
   else {
     const { data, error: err } = await supabase
       .from('prospects')
-      .insert({ ...payload, cree_par: user.value?.id })
+      .insert({ ...payload, cree_par: userId.value })
       .select('id')
       .single()
     if (err || !data) { error.value = err?.message ?? 'Erreur'; saving.value = false; return }
     await supabase.from('prospect_activites').insert({
       prospect_id: data.id,
-      auteur_id: user.value?.id,
+      auteur_id: userId.value,
       type: 'creation',
       detail: 'Fiche créée',
     })
