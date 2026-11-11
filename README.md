@@ -18,8 +18,11 @@ de trajet (calcul d'itinéraire).
 | Rôle | Accès |
 |---|---|
 | `admin` | Tout + gestion équipe + paramètres |
-| `telepro` | Tous les prospects, prise de RDV, planning global |
+| `telepro` | Dossiers créés par lui, prise de RDV, planning global ; aucune finance |
 | `commercial` | Ses prospects et ses RDV uniquement (RLS) |
+| `regie_interne` | Ses dossiers, ses RDV et ses commissions personnelles |
+| `regie_externe` | Ses dossiers et documents selon les droits historiques, ses commissions |
+| `apporteur_externe` | Portail en lecture seule : ses dossiers signés résumés et ses propres commissions |
 
 ## Setup local
 
@@ -37,9 +40,13 @@ supabase db push          # applique les migrations
 supabase db seed          # données de test (supabase/seed.sql)
 ```
 
-Le premier compte admin se crée via le dashboard Supabase (Auth → Invite user,
-avec `{"nom": "...", "role": "admin"}` en user metadata), ensuite tout passe
-par l'écran Équipe de l'app.
+Le premier compte se crée via le dashboard Supabase (Auth → Invite user), puis
+un opérateur de confiance attribue explicitement `role = 'admin'` à sa ligne
+`public.profiles` en base. Les métadonnées utilisateur ne confèrent aucun rôle
+privilégié. Les invitations suivantes passent par l'écran Équipe de l'app.
+
+Le [guide d'intégration](docs/integration-crm.md) décrit les sociétés multi-dossiers,
+commissions, échéanciers, import Excel et la procédure de migration coordonnée.
 
 ### Variables d'environnement
 

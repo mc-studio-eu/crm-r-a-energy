@@ -1,5 +1,8 @@
 <script setup lang="ts">
-import { PROSPECT_STATUTS, RDV_STATUTS, type Prospect, type ProspectStatut } from '~~/shared/types'
+import {
+  ENERGIES, FOURNISSEURS, PROSPECT_HISTORICAL_STATUTS, PROSPECT_STATUTS, RDV_STATUTS,
+  type Prospect, type ProspectHistoriqueStatut, type ProspectStatut, type Rdv,
+} from '~~/shared/types'
 
 const route = useRoute()
 const supabase = useSupabaseClient()
@@ -11,8 +14,12 @@ const editing = ref(false)
 const showRdvForm = ref(false)
 
 const { data: prospect, refresh } = await useAsyncData(`prospect-${id}`, async () => {
-  const { data } = await supabase.from('prospects').select('*').eq('id', id).single()
-  return data as Prospect | null
+  const { data } = await supabase
+    .from('prospects')
+    .select('*, teleprospecteur:profiles!prospects_teleprospecteur_id_fkey(nom)')
+    .eq('id', id)
+    .single()
+  return data as (Prospect & { teleprospecteur: { nom: string } | null }) | null
 })
 
 const { data: rdvs, refresh: refreshRdvs } = await useAsyncData(`rdvs-${id}`, async () => {
@@ -21,7 +28,7 @@ const { data: rdvs, refresh: refreshRdvs } = await useAsyncData(`rdvs-${id}`, as
     .select('*, profiles!rdv_commercial_id_fkey(nom)')
     .eq('prospect_id', id)
     .order('debut', { ascending: false })
-  return data ?? []
+  return (data ?? []) as (Rdv & { profiles: { nom: string } | null })[]
 })
 
 const { data: activites, refresh: refreshActivites } = await useAsyncData(`activites-${id}`, async () => {
@@ -78,11 +85,23 @@ async function ajouterCommentaire() {
 const peutPrendreRdv = computed(() => isStaff.value || profile.value?.role === 'regie_interne')
 // Documents : admins + régie externe uniquement (règle client).
 const voitDocuments = computed(() => isAdmin.value || profile.value?.role === 'regie_externe')
+const modificationStatut = ref(false)
+const erreurStatut = ref('')
 
 async function setStatut(statut: ProspectStatut) {
-  await supabase.from('prospects').update({ statut }).eq('id', id)
-  refresh()
-  refreshActivites()
+  modificationStatut.value = true
+  erreurStatut.value = ''
+  try {
+    const { error } = await supabase.from('prospects').update({ statut }).eq('id', id).select('id').single()
+    if (error) throw error
+    await Promise.all([refresh(), refreshActivites()])
+  }
+  catch (error) {
+    erreurStatut.value = errorMessage(error, 'Le statut n’a pas pu être mis à jour.')
+  }
+  finally {
+    modificationStatut.value = false
+  }
 }
 
 async function archiver() {
@@ -102,14 +121,16 @@ function fmtDate(d: string) {
 
 interface Activite {
   type: string
-  ancien_statut: ProspectStatut | null
-  nouveau_statut: ProspectStatut | null
+  ancien_statut: ProspectHistoriqueStatut | null
+  nouveau_statut: ProspectHistoriqueStatut | null
   detail: string | null
 }
 
 function activiteLabel(a: Activite) {
   if (a.type === 'statut') {
-    return `Statut : ${(a.ancien_statut && PROSPECT_STATUTS[a.ancien_statut]) ?? '—'} → ${a.nouveau_statut ? PROSPECT_STATUTS[a.nouveau_statut] : ''}`
+    const ancien = a.ancien_statut ? PROSPECT_HISTORICAL_STATUTS[a.ancien_statut] : '—'
+    const nouveau = a.nouveau_statut ? PROSPECT_HISTORICAL_STATUTS[a.nouveau_statut] : '—'
+    return `Statut : ${ancien} → ${nouveau}`
   }
   return a.detail ?? a.type
 }
@@ -119,17 +140,20 @@ function activiteLabel(a: Activite) {
   <div v-if="prospect" class="max-w-5xl">
     <div class="mb-6 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <NuxtLink to="/prospects" class="text-sm text-gray-400 hover:text-primary">← Prospects</NuxtLink>
-        <h1 class="text-2xl">{{ prospect.raison_sociale }}</h1>
-        <div class="mt-1 flex items-center gap-2">
+        <NuxtLink to="/prospects" class="text-sm text-gray-500 hover:text-primary">← Dossiers</NuxtLink>
+        <h1 class="text-2xl">{{ prospect.raison_sociale || 'Société sans nom' }}</h1>
+        <div class="mt-1 flex flex-wrap items-center gap-2">
           <StatusBadge :statut="prospect.statut" />
           <span v-if="prospect.archive" class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Archivé</span>
           <span v-if="prospect.siret" class="text-xs text-gray-400">SIRET {{ prospect.siret }}</span>
+          <NuxtLink :to="`/societes/${prospect.societe_id}`" class="text-xs text-primary hover:underline">Fiche société</NuxtLink>
         </div>
       </div>
       <div class="flex gap-2">
         <select
           class="input !w-auto"
+          aria-label="Statut du dossier"
+          :disabled="modificationStatut"
           :value="prospect.statut"
           @change="setStatut(($event.target as HTMLSelectElement).value as ProspectStatut)"
         >
@@ -140,6 +164,7 @@ function activiteLabel(a: Activite) {
         <button v-if="isAdmin && prospect.archive" class="btn-secondary" @click="restaurer">Restaurer</button>
       </div>
     </div>
+    <p v-if="erreurStatut" class="mb-4 text-sm text-red-600" role="alert">{{ erreurStatut }}</p>
 
     <div v-if="editing" class="card mb-6">
       <ProspectForm :prospect="prospect" @saved="editing = false; refresh()" />
@@ -154,8 +179,15 @@ function activiteLabel(a: Activite) {
         <p><span class="text-gray-400">Email :</span> <a :href="`mailto:${prospect.email}`" class="text-primary">{{ prospect.email || '—' }}</a></p>
         <p><span class="text-gray-400">Adresse :</span> {{ [prospect.adresse, prospect.code_postal, prospect.ville].filter(Boolean).join(', ') || '—' }}</p>
         <p v-if="prospect.lat == null" class="text-xs text-amber-600">⚠️ Adresse non géocodée</p>
-        <p><span class="text-gray-400">Source :</span> {{ prospect.source || '—' }}</p>
+        <p><span class="text-gray-400">Téléprospecteur :</span> {{ prospect.teleprospecteur ? displayName(prospect.teleprospecteur.nom) : '—' }}</p>
         <p v-if="prospect.notes" class="whitespace-pre-wrap rounded bg-gray-50 p-2">{{ prospect.notes }}</p>
+        <h2 class="border-t border-gray-100 pt-3 text-base">Contrat</h2>
+        <p><span class="text-gray-500">Énergie :</span> {{ prospect.energie ? ENERGIES[prospect.energie] : '—' }}</p>
+        <p><span class="text-gray-500">Fournisseur :</span> {{ prospect.fournisseur ? FOURNISSEURS[prospect.fournisseur] : '—' }}</p>
+        <p><span class="text-gray-500">Source :</span> {{ prospect.source || '—' }}</p>
+        <p><span class="text-gray-500">Date de signature :</span> {{ formatContractDate(prospect.date_signature) }}</p>
+        <p><span class="text-gray-500">Début de livraison :</span> {{ formatContractDate(prospect.debut_livraison) }}</p>
+        <p><span class="text-gray-500">Fin de livraison :</span> {{ formatContractDate(prospect.fin_livraison) }}</p>
       </div>
 
       <!-- RDV -->
@@ -170,21 +202,27 @@ function activiteLabel(a: Activite) {
           <RdvForm :prospect="prospect" @created="showRdvForm = false; refreshRdvs(); refresh(); refreshActivites()" />
         </div>
         <ul class="space-y-2 text-sm">
-          <li v-for="r in rdvs" :key="r.id" class="flex items-center justify-between rounded-lg border border-gray-100 p-3">
+          <li v-for="r in rdvs" :key="r.id" class="flex items-start justify-between gap-3 rounded-lg border border-gray-100 p-3">
             <div>
-              <p class="font-medium">{{ fmtDate(r.debut) }}</p>
+              <p class="font-medium">{{ fmtDate(r.debut) }}<span v-if="r.qualification"> · {{ r.qualification }}</span></p>
               <p class="text-xs text-gray-500">
                 {{ displayName(r.profiles?.nom) }} · {{ r.lieu }}
                 <span v-if="r.temps_trajet_min"> · trajet {{ r.temps_trajet_min }} min</span>
               </p>
+              <RdvSyncStatus :rdv="r" @refreshed="refreshRdvs()" />
+              <RdvEdit v-if="isStaff || r.commercial_id === profile?.id" :rdv="r" @saved="refreshRdvs()" />
             </div>
-            <span class="text-xs font-medium" :class="r.statut === 'planifie' ? 'text-primary' : r.statut === 'honore' ? 'text-green-700' : 'text-gray-400'">
+            <span class="text-xs font-medium" :class="r.statut === 'planifie' ? 'text-primary' : r.statut === 'honore' ? 'text-primary' : 'text-gray-400'">
               {{ RDV_STATUTS[r.statut] }}
             </span>
           </li>
-          <li v-if="!rdvs?.length" class="py-4 text-center text-gray-400">Aucun RDV pour ce prospect.</li>
+          <li v-if="!rdvs?.length" class="py-4 text-center text-gray-400">Aucun RDV pour ce dossier.</li>
         </ul>
       </div>
+    </div>
+
+    <div v-if="isAdmin" class="mt-6">
+      <DossierFinances :prospect-id="id" />
     </div>
 
     <div class="mt-6 grid gap-6 lg:grid-cols-2">
@@ -241,5 +279,5 @@ function activiteLabel(a: Activite) {
       </ul>
     </div>
   </div>
-  <div v-else class="py-20 text-center text-gray-400">Prospect introuvable.</div>
+  <div v-else class="py-20 text-center text-gray-400">Dossier introuvable.</div>
 </template>

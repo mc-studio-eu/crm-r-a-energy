@@ -2,13 +2,13 @@
 import { RDV_STATUTS, type RdvStatut } from '~~/shared/types'
 
 const supabase = useSupabaseClient()
-const user = useSupabaseUser()
+const userId = useUserId()
 
 const { data: rdvs, refresh } = await useAsyncData('mes-rdv', async () => {
   const { data } = await supabase
     .from('rdv')
     .select('*, prospects(id, raison_sociale, telephone)')
-    .eq('commercial_id', user.value!.id)
+    .eq('commercial_id', userId.value!)
     .gte('debut', new Date(Date.now() - 7 * 86400_000).toISOString())
     .order('debut')
   return data ?? []
@@ -42,7 +42,7 @@ const heure = (d: string) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-
         <div v-for="r in items" :key="r.id" class="card flex items-center justify-between !p-4">
           <div>
             <p class="font-medium">
-              {{ heure(r.debut) }} – {{ heure(r.fin) }} ·
+              {{ r.qualification ? `${r.qualification} · ` : '' }}{{ heure(r.debut) }} – {{ heure(r.fin) }} ·
               <NuxtLink :to="`/prospects/${r.prospects?.id}`" class="text-primary hover:underline">
                 {{ r.prospects?.raison_sociale }}
               </NuxtLink>
@@ -52,6 +52,8 @@ const heure = (d: string) => new Date(d).toLocaleTimeString('fr-FR', { hour: '2-
               <span v-if="r.temps_trajet_min"> · 🚗 {{ r.temps_trajet_min }} min</span>
               · <a :href="`tel:${r.prospects?.telephone}`" class="text-primary">{{ r.prospects?.telephone }}</a>
             </p>
+            <RdvSyncStatus :rdv="r" @refreshed="refresh()" />
+            <RdvEdit :rdv="r" @saved="refresh()" />
           </div>
           <select
             class="rounded border border-gray-200 px-2 py-1 text-xs"

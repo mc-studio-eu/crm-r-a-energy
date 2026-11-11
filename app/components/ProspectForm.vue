@@ -1,29 +1,48 @@
 <script setup lang="ts">
-import { ASSIGNABLE_ROLES, type Prospect } from '~~/shared/types'
+import {
+  ASSIGNABLE_ROLES, ENERGIES, FOURNISSEURS, PROSPECT_STATUTS,
+  type Energie, type Fournisseur, type Prospect, type ProspectStatut, type Societe,
+} from '~~/shared/types'
 
-const props = defineProps<{ prospect?: Prospect | null }>()
+const props = defineProps<{ prospect?: Prospect | null, initialSociete?: Societe | null }>()
 const emit = defineEmits<{ saved: [id: string] }>()
 
 const supabase = useSupabaseClient()
 const userId = useUserId()
+const { profile, isAdmin } = useProfile()
+const societe = ref(props.initialSociete ?? null)
+const modeSociete = ref<'nouvelle' | 'existante'>(societe.value ? 'existante' : 'nouvelle')
+const statut = ref<ProspectStatut>('en_cours')
 
 const form = reactive({
-  raison_sociale: props.prospect?.raison_sociale ?? '',
-  siret: props.prospect?.siret ?? '',
   contact_nom: props.prospect?.contact_nom ?? '',
   telephone: props.prospect?.telephone ?? '',
   email: props.prospect?.email ?? '',
   adresse: props.prospect?.adresse ?? '',
   code_postal: props.prospect?.code_postal ?? '',
   ville: props.prospect?.ville ?? '',
+  teleprospecteur_id: props.prospect?.teleprospecteur_id
+    ?? (profile.value?.role === 'telepro' ? profile.value.id : ''),
+  fournisseur: (props.prospect?.fournisseur ?? '') as Fournisseur | '',
+  energie: (props.prospect?.energie ?? '') as Energie | '',
+  date_signature: props.prospect?.date_signature ?? '',
+  debut_livraison: props.prospect?.debut_livraison ?? '',
+  fin_livraison: props.prospect?.fin_livraison ?? '',
   source: props.prospect?.source ?? '',
   notes: props.prospect?.notes ?? '',
   assigne_a: props.prospect?.assigne_a ?? '',
 })
+const identite = reactive({ raison_sociale: '', siret: '' })
 
 const { data: commerciaux } = await useAsyncData('form-commerciaux', async () => {
   const { data } = await supabase
     .from('profiles').select('id, nom').in('role', ASSIGNABLE_ROLES).eq('actif', true).order('nom')
+  return data ?? []
+})
+
+const { data: teleprospecteurs } = await useAsyncData('form-teleprospecteurs', async () => {
+  const { data } = await supabase
+    .from('profiles').select('id, nom').eq('role', 'telepro').eq('actif', true).order('nom')
   return data ?? []
 })
 
@@ -47,7 +66,7 @@ let entrepriseTimer: ReturnType<typeof setTimeout> | null = null
 
 function onRaisonSocialeInput() {
   if (entrepriseTimer) clearTimeout(entrepriseTimer)
-  const q = form.raison_sociale.trim()
+  const q = identite.raison_sociale.trim()
   if (q.length < 3) {
     entrepriseSuggestions.value = []
     entrepriseOpen.value = false
@@ -66,8 +85,8 @@ function onRaisonSocialeInput() {
 }
 
 function choisirEntreprise(s: EntrepriseSuggestion) {
-  form.raison_sociale = s.raison_sociale
-  if (s.siret) form.siret = s.siret
+  identite.raison_sociale = s.raison_sociale
+  if (s.siret) identite.siret = s.siret
   if (s.adresse) form.adresse = s.adresse
   if (s.code_postal) form.code_postal = s.code_postal
   if (s.ville) form.ville = s.ville
@@ -122,7 +141,7 @@ function choisirAdresse(s: AdresseSuggestion) {
 
 async function rechercherSiret() {
   siretError.value = ''
-  const siret = form.siret.replace(/\s/g, '')
+  const siret = identite.siret.replace(/\s/g, '')
   if (!/^\d{14}$/.test(siret)) {
     siretError.value = 'Saisissez un SIRET de 14 chiffres.'
     return
@@ -130,10 +149,11 @@ async function rechercherSiret() {
   siretLoading.value = true
   try {
     const data = await $fetch('/api/siret', { query: { siret } })
-    if (data.raison_sociale) form.raison_sociale = data.raison_sociale
+    if (data.raison_sociale) identite.raison_sociale = data.raison_sociale
     if (data.adresse) form.adresse = data.adresse
     if (data.code_postal) form.code_postal = data.code_postal
     if (data.ville) form.ville = data.ville
+    adresseCoords.value = null
   }
   catch (e: unknown) {
     siretError.value = errorMessage(e, 'SIRET introuvable.')
@@ -144,16 +164,28 @@ async function rechercherSiret() {
 }
 
 async function save() {
-  saving.value = true
   error.value = ''
   geocodeWarning.value = ''
+  if (!props.prospect && modeSociete.value === 'existante' && !societe.value) {
+    error.value = 'Sélectionnez la société à rattacher au dossier.'
+    return
+  }
+  if (!props.prospect && modeSociete.value === 'nouvelle' && !identite.raison_sociale.trim()) {
+    error.value = 'Saisissez une raison sociale.'
+    return
+  }
+  if (form.debut_livraison && form.fin_livraison && form.fin_livraison < form.debut_livraison) {
+    error.value = 'La fin de livraison doit suivre le début de livraison.'
+    return
+  }
 
+  saving.value = true
   // Géocodage automatique de l'adresse (ticket 05)
-  let lat: number | null = props.prospect?.lat ?? null
-  let lng: number | null = props.prospect?.lng ?? null
   const adresseComplete = [form.adresse, form.code_postal, form.ville].filter(Boolean).join(', ')
   const adresseChanged = !props.prospect
     || adresseComplete !== [props.prospect.adresse, props.prospect.code_postal, props.prospect.ville].filter(Boolean).join(', ')
+  let lat = adresseChanged ? null : props.prospect?.lat ?? null
+  let lng = adresseChanged ? null : props.prospect?.lng ?? null
 
   if (adresseCoords.value) {
     lat = adresseCoords.value.lat
@@ -166,48 +198,85 @@ async function save() {
       lng = geo.lng
     }
     catch {
-      geocodeWarning.value = 'Adresse non géocodée — le calcul d\'itinéraire sera indisponible pour ce prospect.'
+      geocodeWarning.value = 'Adresse non géocodée. Le calcul d\'itinéraire sera indisponible pour ce dossier.'
     }
   }
 
   const payload = {
     ...form,
     assigne_a: form.assigne_a || null,
+    teleprospecteur_id: form.teleprospecteur_id || null,
+    fournisseur: form.fournisseur || null,
+    energie: form.energie || null,
+    date_signature: form.date_signature || null,
+    debut_livraison: form.debut_livraison || null,
+    fin_livraison: form.fin_livraison || null,
+    source: form.source.trim() || null,
     lat,
     lng,
   }
 
-  if (props.prospect) {
-    const { error: err } = await supabase.from('prospects').update(payload).eq('id', props.prospect.id)
-    if (err) { error.value = err.message; saving.value = false; return }
-    emit('saved', props.prospect.id)
-  }
-  else {
+  try {
+    if (props.prospect) {
+      const { data, error: err } = await supabase.from('prospects')
+        .update(payload).eq('id', props.prospect.id).select('id').single()
+      if (err) throw err
+      emit('saved', data.id)
+      return
+    }
+
+    const existante = modeSociete.value === 'existante' ? societe.value : null
     const { data, error: err } = await supabase
       .from('prospects')
-      .insert({ ...payload, cree_par: userId.value })
+      .insert({
+        ...payload,
+        societe_id: existante?.id ?? null,
+        raison_sociale: existante?.raison_sociale ?? identite.raison_sociale,
+        siret: existante ? existante.siret : identite.siret,
+        statut: statut.value,
+        cree_par: userId.value,
+      })
       .select('id')
       .single()
-    if (err || !data) { error.value = err?.message ?? 'Erreur'; saving.value = false; return }
+    if (err) throw err
     await supabase.from('prospect_activites').insert({
       prospect_id: data.id,
       auteur_id: userId.value,
       type: 'creation',
-      detail: 'Fiche créée',
+      detail: 'Dossier créé',
     })
     emit('saved', data.id)
   }
-  saving.value = false
+  catch (err) {
+    error.value = errorMessage(err, 'Le dossier n’a pas pu être enregistré.')
+  }
+  finally {
+    saving.value = false
+  }
 }
 </script>
 
 <template>
   <form class="space-y-4" @submit.prevent="save">
+    <div v-if="prospect" class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
+      <span>{{ prospect.raison_sociale }}<span v-if="prospect.siret" class="ml-2 text-gray-500">{{ prospect.siret }}</span></span>
+      <NuxtLink v-if="isAdmin" :to="`/societes/${prospect.societe_id}`" class="text-primary hover:underline">Modifier la société</NuxtLink>
+    </div>
+    <div v-else class="space-y-3">
+      <label class="block">
+        <span class="label">Société</span>
+        <select v-model="modeSociete" class="input">
+          <option value="nouvelle">Créer une société</option>
+          <option value="existante">Rattacher à une société existante</option>
+        </select>
+      </label>
+      <SocietePicker v-if="modeSociete === 'existante'" v-model="societe" />
+    </div>
     <div class="grid gap-4 md:grid-cols-2">
-      <div class="relative">
+      <div v-if="!prospect && modeSociete === 'nouvelle'" class="relative">
         <label class="label">Raison sociale *</label>
         <input
-          v-model="form.raison_sociale" required class="input" autocomplete="off"
+          v-model="identite.raison_sociale" required class="input" autocomplete="off"
           @input="onRaisonSocialeInput" @focus="onRaisonSocialeInput"
           @blur="() => setTimeout(() => entrepriseOpen = false, 150)"
         >
@@ -222,10 +291,10 @@ async function save() {
           </li>
         </ul>
       </div>
-      <div>
+      <div v-if="!prospect && modeSociete === 'nouvelle'">
         <label class="label">SIRET</label>
         <div class="flex gap-2">
-          <input v-model="form.siret" class="input" pattern="[0-9]{14}" title="14 chiffres" placeholder="14 chiffres" @keydown.enter.prevent="rechercherSiret">
+          <input v-model="identite.siret" class="input" pattern="[0-9]{14}" title="14 chiffres" placeholder="14 chiffres" @keydown.enter.prevent="rechercherSiret">
           <button type="button" class="btn-secondary whitespace-nowrap" :disabled="siretLoading" @click="rechercherSiret">
             {{ siretLoading ? 'Recherche…' : 'Rechercher' }}
           </button>
@@ -245,9 +314,49 @@ async function save() {
         <input v-model="form.email" type="email" class="input">
       </div>
       <div>
-        <label class="label">Source</label>
-        <input v-model="form.source" class="input" placeholder="Téléprospection, salon…">
+        <label class="label">Téléprospecteur</label>
+        <select v-model="form.teleprospecteur_id" class="input">
+          <option value="">Non renseigné</option>
+          <option v-for="t in teleprospecteurs" :key="t.id" :value="t.id">{{ displayName(t.nom) }}</option>
+        </select>
       </div>
+      <div>
+        <label class="label">Fournisseur</label>
+        <select v-model="form.fournisseur" class="input">
+          <option value="">Non renseigné</option>
+          <option v-for="(label, value) in FOURNISSEURS" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </div>
+      <label class="block">
+        <span class="label">Énergie</span>
+        <select v-model="form.energie" class="input">
+          <option value="">Non renseignée</option>
+          <option v-for="(label, value) in ENERGIES" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </label>
+      <label v-if="!prospect" class="block">
+        <span class="label">Statut</span>
+        <select v-model="statut" class="input">
+          <option v-for="(label, value) in PROSPECT_STATUTS" :key="value" :value="value">{{ label }}</option>
+        </select>
+      </label>
+      <label class="block">
+        <span class="label">Source du dossier</span>
+        <input v-model="form.source" class="input">
+      </label>
+      <label class="block">
+        <span class="label">Date de signature</span>
+        <input v-model="form.date_signature" type="date" class="input">
+        <span class="mt-1 block text-xs text-gray-500">Utilisée pour le suivi mensuel des dossiers signés.</span>
+      </label>
+      <label class="block">
+        <span class="label">Début de livraison</span>
+        <input v-model="form.debut_livraison" type="date" class="input">
+      </label>
+      <label class="block">
+        <span class="label">Fin de livraison</span>
+        <input v-model="form.fin_livraison" type="date" class="input" :min="form.debut_livraison || undefined">
+      </label>
       <div class="md:col-span-2 relative">
         <label class="label">Adresse</label>
         <input
@@ -267,11 +376,11 @@ async function save() {
       </div>
       <div>
         <label class="label">Code postal</label>
-        <input v-model="form.code_postal" class="input">
+        <input v-model="form.code_postal" class="input" @input="adresseCoords = null">
       </div>
       <div>
         <label class="label">Ville</label>
-        <input v-model="form.ville" class="input">
+        <input v-model="form.ville" class="input" @input="adresseCoords = null">
       </div>
       <div class="md:col-span-2">
         <label class="label">Commercial assigné</label>
@@ -288,7 +397,7 @@ async function save() {
     <p v-if="geocodeWarning" class="text-sm text-amber-600">{{ geocodeWarning }}</p>
     <p v-if="error" class="text-sm text-red-600">{{ error }}</p>
     <button type="submit" class="btn-primary" :disabled="saving">
-      {{ saving ? 'Enregistrement…' : (prospect ? 'Enregistrer' : 'Créer la fiche') }}
+      {{ saving ? 'Enregistrement…' : (prospect ? 'Enregistrer' : 'Créer le dossier') }}
     </button>
   </form>
 </template>

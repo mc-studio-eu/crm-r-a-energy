@@ -66,8 +66,11 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
 <template>
   <div>
     <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-      <h1 class="text-2xl">Prospects <span class="text-base font-normal text-gray-400">({{ data?.count }})</span></h1>
-      <NuxtLink v-if="isStaff || isRegie" to="/prospects/new" class="btn-primary">+ Nouveau prospect</NuxtLink>
+      <h1 class="text-2xl">Dossiers <span class="text-base font-normal text-gray-400">({{ data?.count }})</span></h1>
+      <div class="flex flex-wrap gap-2">
+        <NuxtLink v-if="isAdmin" to="/admin/import" class="btn-secondary">Importer un fichier Excel</NuxtLink>
+        <NuxtLink v-if="isStaff || isRegie" to="/prospects/new" class="btn-primary">+ Nouveau dossier</NuxtLink>
+      </div>
     </div>
 
     <!-- Filtres -->
@@ -86,7 +89,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
 
     <label v-if="isAdmin" class="mb-4 flex w-fit cursor-pointer items-center gap-2 text-sm text-gray-600">
       <input v-model="voirArchives" type="checkbox" class="accent-primary">
-      Voir les prospects archivés
+      Voir les dossiers archivés
     </label>
 
     <!-- Liste en cartes (mobile) -->
@@ -110,7 +113,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
         </p>
       </NuxtLink>
       <p v-if="!data?.rows.length" class="card py-10 text-center text-gray-400">
-        Aucun prospect ne correspond aux filtres.
+        Aucun dossier ne correspond aux filtres.
       </p>
     </div>
 
@@ -146,14 +149,14 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
               <select
                 class="rounded border border-gray-200 px-1 py-0.5 text-xs"
                 :value="p.statut"
-                @change="setStatut(p, ($event.target as HTMLSelectElement).value as any)"
+                @change="setStatut(p, ($event.target as HTMLSelectElement).value as ProspectStatut)"
               >
                 <option v-for="(label, s) in PROSPECT_STATUTS" :key="s" :value="s">{{ label }}</option>
               </select>
             </td>
           </tr>
           <tr v-if="!data?.rows.length">
-            <td colspan="6" class="py-10 text-center text-gray-400">Aucun prospect ne correspond aux filtres.</td>
+            <td colspan="6" class="py-10 text-center text-gray-400">Aucun dossier ne correspond aux filtres.</td>
           </tr>
         </tbody>
       </table>

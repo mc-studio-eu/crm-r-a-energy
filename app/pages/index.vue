@@ -9,7 +9,7 @@ import {
 
 const user = useSupabaseUser()
 const supabase = useSupabaseClient()
-const { profile } = useProfile()
+const { profile, isStaff, isRegie } = useProfile()
 
 useHead({
   title: () => user.value ? 'Tableau de bord — R&A Energy' : 'R&A Energy — CRM Professionnel & Planification',
@@ -28,7 +28,7 @@ const { data: stats } = await useAsyncData('dashboard-stats', async () => {
 
   // Compteurs par statut
   const counts: Record<ProspectStatut, number> = {
-    nouveau: 0, a_rappeler: 0, rdv_place: 0, signe: 0, perdu: 0,
+    en_cours: 0, rdv_place: 0, signe: 0, perdu: 0,
   }
   for (const statut of Object.keys(PROSPECT_STATUTS) as ProspectStatut[]) {
     const { count } = await supabase
@@ -110,7 +110,7 @@ const donutSegments = computed(() =>
 
 // Entonnoir de conversion (pipeline ordonné)
 const funnelBars = computed(() => {
-  const order: ProspectStatut[] = ['nouveau', 'a_rappeler', 'rdv_place', 'signe']
+  const order: ProspectStatut[] = ['en_cours', 'rdv_place', 'signe']
   return order.map(s => ({
     label: PROSPECT_STATUTS[s],
     value: stats.value?.counts[s] ?? 0,
@@ -130,7 +130,7 @@ const rdvBars = computed(() => {
 })
 
 const kpis = computed(() => [
-  { label: 'Prospects actifs', value: stats.value?.totalProspects ?? 0, sub: 'non archivés' },
+  { label: 'Dossiers actifs', value: stats.value?.totalProspects ?? 0, sub: 'non archivés' },
   { label: 'RDV aujourd\'hui', value: stats.value?.rdvAujourdhui ?? 0, sub: 'planifiés', highlight: true },
   { label: 'RDV à venir (7 j)', value: stats.value?.rdv7j ?? 0, sub: 'cette semaine' },
   { label: 'Taux de signature', value: `${stats.value?.conversion ?? 0}%`, sub: 'signés / total' },
@@ -145,8 +145,8 @@ const kpis = computed(() => [
         <p class="text-sm text-gray-500">Bonjour {{ displayName(profile?.nom) }} 👋</p>
       </div>
       <div class="flex gap-3">
-        <NuxtLink to="/prospects" class="btn-secondary">Voir les prospects</NuxtLink>
-        <NuxtLink to="/prospects/new" class="btn-primary">+ Nouveau prospect</NuxtLink>
+        <NuxtLink to="/prospects" class="btn-secondary">Voir les dossiers</NuxtLink>
+        <NuxtLink v-if="isStaff || isRegie" to="/prospects/new" class="btn-primary">+ Nouveau dossier</NuxtLink>
       </div>
     </div>
 
@@ -177,7 +177,7 @@ const kpis = computed(() => [
       </div>
 
       <div class="card lg:col-span-2">
-        <h2 class="mb-1 text-base">Prospects créés</h2>
+        <h2 class="mb-1 text-base">Dossiers créés</h2>
         <p class="mb-2 text-xs text-gray-400">8 dernières semaines</p>
         <TrendChart v-if="stats?.trend" :points="stats.trend" />
       </div>
@@ -232,7 +232,7 @@ const kpis = computed(() => [
             <div class="rounded-xl bg-white p-6 space-y-4">
               <div class="flex items-center justify-between border-b border-gray-100 pb-3">
                 <span class="text-sm font-bold text-gray-800">Prochain RDV commercial</span>
-                <span class="rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800">Validé</span>
+                <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">Validé</span>
               </div>
               <div class="space-y-2">
                 <p class="text-xs text-gray-400">Prospect</p>

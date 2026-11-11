@@ -65,7 +65,7 @@ async function update(id: string, body: Record<string, unknown>) {
         </div>
         <button type="submit" class="btn-primary" :disabled="inviting">Inviter</button>
       </form>
-      <p v-if="success" class="mt-2 text-sm text-green-700">{{ success }}</p>
+      <p v-if="success" class="mt-2 text-sm text-primary">{{ success }}</p>
       <p v-if="error" class="mt-2 text-sm text-red-600">{{ error }}</p>
     </div>
 
@@ -89,19 +89,19 @@ async function update(id: string, body: Record<string, unknown>) {
               </select>
             </td>
             <td>
-              <span :class="u.google_calendar_connected ? 'text-green-700' : 'text-gray-400'" class="text-xs">
+              <span :class="u.google_calendar_connected ? 'text-primary' : 'text-gray-400'" class="text-xs">
                 {{ u.google_calendar_connected ? '✓ Connecté' : 'Non connecté' }}
               </span>
             </td>
             <td>
-              <span :class="u.actif ? 'text-green-700' : 'text-red-600'" class="text-xs font-medium">
+              <span :class="u.actif ? 'text-primary' : 'text-red-600'" class="text-xs font-medium">
                 {{ u.actif ? 'Actif' : 'Désactivé' }}
               </span>
             </td>
             <td>
               <button
                 class="text-xs underline"
-                :class="u.actif ? 'text-red-600' : 'text-green-700'"
+                :class="u.actif ? 'text-red-600' : 'text-primary'"
                 @click="update(u.id, { actif: !u.actif })"
               >
                 {{ u.actif ? 'Désactiver' : 'Réactiver' }}
