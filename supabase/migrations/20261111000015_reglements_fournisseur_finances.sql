@@ -23,32 +23,49 @@ revoke insert (prospect_id, libelle, date_prevue, annee_prevue, montant_cents, t
        update (libelle, date_prevue, annee_prevue, montant_cents, taux_bps, date_reception, note)
   on public.prospect_reglements_fournisseur from authenticated;
 
-create function public.finance_proteger_reglement_fournisseur()
-returns trigger language plpgsql security invoker set search_path = pg_catalog as $$
-declare
-  v_lie boolean := false;
-  v_ancienne_echeance uuid;
-  v_nouvelle_echeance uuid;
-begin
-  -- Le réglage local à la RPC est restauré automatiquement à sa sortie.
-  if current_setting('crm.synchronisation_reglement_fournisseur', true) is distinct from 'on' then
-    if tg_table_name = 'finance_echeances' then
-      if tg_op <> 'INSERT' then v_lie := old.reglement_fournisseur_id is not null; end if;
-      if tg_op <> 'DELETE' then v_lie := v_lie or new.reglement_fournisseur_id is not null; end if;
-    else
-      if tg_op <> 'INSERT' then v_ancienne_echeance := old.echeance_id; end if;
-      if tg_op <> 'DELETE' then v_nouvelle_echeance := new.echeance_id; end if;
-      v_lie := exists (
-        select 1 from public.finance_echeances
-        where id in (v_ancienne_echeance, v_nouvelle_echeance) and reglement_fournisseur_id is not null
-      );
-    end if;
+-- Seule la RPC de synchronisation peut autoriser une écriture sur son règlement,
+-- pendant sa transaction et sur sa connexion. Un rollback retire aussi la garde.
+create table public.finance_reglements_fournisseur_garde (
+  transaction_id bigint not null,
+  backend_pid integer not null,
+  reglement_id uuid not null,
+  primary key (transaction_id, backend_pid, reglement_id)
+);
+alter table public.finance_reglements_fournisseur_garde enable row level security;
+revoke all on public.finance_reglements_fournisseur_garde from public, anon, authenticated, service_role;
 
-    if v_lie then
-      raise exception using errcode = '22023',
-        message = 'Modifiez cet encaissement depuis les règlements fournisseur du dossier.';
+create function public.finance_proteger_reglement_fournisseur()
+returns trigger language plpgsql security definer set search_path = pg_catalog as $$
+declare
+  v_ancien_reglement uuid;
+  v_nouveau_reglement uuid;
+begin
+  if tg_table_name = 'finance_echeances' then
+    if tg_op <> 'INSERT' then v_ancien_reglement := old.reglement_fournisseur_id; end if;
+    if tg_op <> 'DELETE' then v_nouveau_reglement := new.reglement_fournisseur_id; end if;
+  else
+    if tg_op <> 'INSERT' then
+      select reglement_fournisseur_id into v_ancien_reglement
+        from public.finance_echeances where id = old.echeance_id;
+    end if;
+    if tg_op <> 'DELETE' then
+      select reglement_fournisseur_id into v_nouveau_reglement
+        from public.finance_echeances where id = new.echeance_id;
     end if;
   end if;
+
+  if exists (
+    select 1 from (values (v_ancien_reglement), (v_nouveau_reglement)) as r(id)
+    where r.id is not null and not exists (
+      select 1 from public.finance_reglements_fournisseur_garde g
+      where g.transaction_id = txid_current_if_assigned() and g.backend_pid = pg_backend_pid()
+        and g.reglement_id = r.id
+    )
+  ) then
+    raise exception using errcode = '22023',
+      message = 'Modifiez cet encaissement depuis les règlements fournisseur du dossier.';
+  end if;
+
   if tg_op = 'DELETE' then return old; end if;
   return new;
 end;
@@ -64,8 +81,7 @@ create trigger finance_paiements_proteger_reglement_fournisseur
 
 create function public.modifier_reglement_fournisseur(p_acteur uuid, p_prospect uuid, p_action text, p_payload jsonb)
 returns jsonb language plpgsql security definer
-set search_path = pg_catalog
-set crm.synchronisation_reglement_fournisseur = 'on' as $$
+set search_path = pg_catalog as $$
 declare
   v_id uuid := (p_payload->>'id')::uuid;
   v_reglement public.prospect_reglements_fournisseur;
@@ -75,6 +91,8 @@ declare
   v_reception date;
   v_libelle text;
   v_champs_echeance jsonb;
+  v_transaction_id bigint;
+  v_backend_pid integer := pg_backend_pid();
 begin
   perform public.finance_exiger_admin(p_acteur);
   -- Même verrou et même ordre que finance_modifier_dossier.
@@ -93,6 +111,27 @@ begin
     if v_echeance.id is not null then
       select id into strict v_paiement from public.finance_paiements where echeance_id = v_echeance.id;
     end if;
+  end if;
+
+  if p_action = 'recevoir' and v_id is not null then
+    v_montant := (p_payload->>'montant_recu_cents')::bigint;
+    v_reception := (p_payload->>'date_reception')::date;
+    if v_montant is null or v_montant not between 1 and 1000000000000
+      or v_reception is null or v_reception not between date '0001-01-01' and date '9999-12-31'
+      or v_reception > timezone('Europe/Paris', now())::date then
+      raise exception using errcode = '22023', message = 'Saisissez le montant reçu et une date de réception valide.';
+    end if;
+
+    if v_echeance.id is not null and v_montant = v_reglement.montant_recu_cents
+      and v_reception = v_reglement.date_reception then
+      return to_jsonb(v_reglement) - 'prospect_id' - 'created_at';
+    end if;
+  end if;
+
+  if v_id is not null then
+    v_transaction_id := txid_current();
+    insert into public.finance_reglements_fournisseur_garde (transaction_id, backend_pid, reglement_id)
+      values (v_transaction_id, v_backend_pid, v_id);
   end if;
 
   if p_action = 'enregistrer' then
@@ -117,19 +156,6 @@ begin
     end if;
 
   elsif p_action = 'recevoir' and v_id is not null then
-    v_montant := (p_payload->>'montant_recu_cents')::bigint;
-    v_reception := (p_payload->>'date_reception')::date;
-    if v_montant is null or v_montant not between 1 and 1000000000000
-      or v_reception is null or v_reception not between date '0001-01-01' and date '9999-12-31'
-      or v_reception > timezone('Europe/Paris', now())::date then
-      raise exception using errcode = '22023', message = 'Saisissez le montant reçu et une date de réception valide.';
-    end if;
-
-    if v_echeance.id is not null and v_montant = v_reglement.montant_recu_cents
-      and v_reception = v_reglement.date_reception then
-      return to_jsonb(v_reglement) - 'prospect_id' - 'created_at';
-    end if;
-
     if not exists (select 1 from public.finance_commissions where prospect_id = p_prospect) then
       raise exception using errcode = '22023', message = 'Enregistrez la commission dans Finances du dossier avant de confirmer la réception.';
     end if;
@@ -168,14 +194,19 @@ begin
     end if;
     if p_action = 'supprimer' then
       delete from public.prospect_reglements_fournisseur where id = v_id;
-      return jsonb_build_object('id', v_id);
+    else
+      update public.prospect_reglements_fournisseur set date_reception = null, montant_recu_cents = null
+        where id = v_id returning * into v_reglement;
     end if;
-    update public.prospect_reglements_fournisseur set date_reception = null, montant_recu_cents = null
-      where id = v_id returning * into v_reglement;
   else
     raise exception using errcode = '22023', message = 'Action ou identifiant de règlement invalide.';
   end if;
 
+  if v_transaction_id is not null then
+    delete from public.finance_reglements_fournisseur_garde
+      where transaction_id = v_transaction_id and backend_pid = v_backend_pid and reglement_id = v_id;
+  end if;
+  if p_action = 'supprimer' then return jsonb_build_object('id', v_id); end if;
   return to_jsonb(v_reglement) - 'prospect_id' - 'created_at';
 end;
 $$;

@@ -42,6 +42,19 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
       'select modifier_reglement_fournisseur($1,$2,$3,$4) as value', [admin, prospectId, action, payload],
     )
   }
+  async function nombreGardes() {
+    return scalar<number>('select count(*)::integer as value from public.finance_reglements_fournisseur_garde', [])
+  }
+  async function asService<T>(callback: () => Promise<T>) {
+    await db.exec('BEGIN; SET LOCAL ROLE service_role;')
+    try { return await callback() }
+    finally { await db.exec('ROLLBACK;') }
+  }
+  async function asAnon<T>(callback: () => Promise<T>) {
+    await db.exec('BEGIN; SET LOCAL ROLE anon;')
+    try { return await callback() }
+    finally { await db.exec('ROLLBACK;') }
+  }
   async function tableau(prospectId: string) {
     const result = await scalar<{
       lignes: { prospect_id: string, id: string, type: string, date: string, montant_cents: number }[]
@@ -57,6 +70,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
     const reglementId = await reglement(prospectId)
 
     await modifier(prospectId, 'recevoir', { id: reglementId, date_reception: '2026-11-10', montant_recu_cents: 25_000 })
+    expect(await nombreGardes()).toBe(0)
     const linked = await db.query<{ due_id: string, payment_id: string, montant_cents: number }>(
       `select e.id as due_id, p.id as payment_id, p.montant_cents
        from public.finance_echeances e join public.finance_paiements p on p.echeance_id=e.id
@@ -65,6 +79,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
     expect(linked.rows).toHaveLength(1)
 
     await modifier(prospectId, 'recevoir', { id: reglementId, date_reception: '2026-11-10', montant_recu_cents: 25_000 })
+    expect(await nombreGardes()).toBe(0)
     let afterRepeat = await db.query<{ due_id: string, payment_id: string }>(
       `select e.id as due_id, p.id as payment_id from public.finance_echeances e
        join public.finance_paiements p on p.echeance_id=e.id where e.reglement_fournisseur_id=$1`, [reglementId],
@@ -72,6 +87,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
     expect(afterRepeat.rows).toEqual([{ due_id: linked.rows[0]!.due_id, payment_id: linked.rows[0]!.payment_id }])
 
     await modifier(prospectId, 'recevoir', { id: reglementId, date_reception: '2026-11-11', montant_recu_cents: 30_000 })
+    expect(await nombreGardes()).toBe(0)
     afterRepeat = await db.query<{ due_id: string, payment_id: string }>(
       `select e.id as due_id, p.id as payment_id from public.finance_echeances e
        join public.finance_paiements p on p.echeance_id=e.id where e.reglement_fournisseur_id=$1`, [reglementId],
@@ -98,6 +114,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
     )
 
     await modifier(prospectId, 'annuler_reception', { id })
+    expect(await nombreGardes()).toBe(0)
     expect((await db.query('select * from public.finance_echeances where id=$1', [dueId])).rows).toHaveLength(0)
     expect((await db.query('select * from public.finance_paiements where echeance_id=$1', [dueId])).rows).toHaveLength(0)
     expect(await tableau(prospectId)).toEqual([])
@@ -110,6 +127,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
       'select id as value from public.finance_echeances where reglement_fournisseur_id=$1', [id],
     )
     await modifier(prospectId, 'supprimer', { id })
+    expect(await nombreGardes()).toBe(0)
     expect((await db.query('select * from public.prospect_reglements_fournisseur where id=$1', [id])).rows).toHaveLength(0)
     expect((await db.query('select * from public.finance_echeances where id=$1', [dueId2])).rows).toHaveLength(0)
     expect((await db.query('select * from public.finance_paiements where echeance_id=$1', [dueId2])).rows).toHaveLength(0)
@@ -122,6 +140,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
     await expect(modifier(withoutCommission, 'recevoir', {
       id: first, date_reception: '2026-11-10', montant_recu_cents: 100,
     })).rejects.toThrow(/commission/i)
+    expect(await nombreGardes()).toBe(0)
     expect((await db.query('select * from public.finance_echeances where reglement_fournisseur_id=$1', [first])).rows).toHaveLength(0)
     expect((await db.query<{ date_reception: string | null, montant_recu_cents: number | null }>(
       'select date_reception,montant_recu_cents from public.prospect_reglements_fournisseur where id=$1', [first],
@@ -133,6 +152,7 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
     await expect(modifier(capped, 'recevoir', {
       id: second, date_reception: '2026-11-10', montant_recu_cents: 10_001,
     })).rejects.toThrow(/dépassent la commission/i)
+    expect(await nombreGardes()).toBe(0)
     expect((await db.query('select * from public.finance_echeances where prospect_id=$1', [capped])).rows).toHaveLength(0)
     expect((await db.query('select * from public.finance_paiements p join public.finance_echeances e on e.id=p.echeance_id where e.prospect_id=$1', [capped])).rows).toHaveLength(0)
     expect((await db.query<{ date_reception: string | null }>(
@@ -159,6 +179,15 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
        values($1,'Mutation directe')`, [firstProspect],
     ))).rejects.toThrow()
     await expect(asUser(db, admin, () => db.query(
+      'select * from public.finance_reglements_fournisseur_garde',
+    ))).rejects.toThrow()
+    await expect(asService(() => db.query(
+      'select * from public.finance_reglements_fournisseur_garde',
+    ))).rejects.toThrow()
+    await expect(asAnon(() => db.query(
+      'select * from public.finance_reglements_fournisseur_garde',
+    ))).rejects.toThrow()
+    await expect(asUser(db, admin, () => db.query(
       "update public.finance_echeances set montant_cents=5000 where reglement_fournisseur_id=$1", [id],
     ))).rejects.toThrow()
     await expect(asUser(db, admin, () => db.query(
@@ -176,6 +205,33 @@ describe('Synchronisation des règlements fournisseur avec Finances', () => {
       admin, firstProspect, 'paiement', { echeance_id: dueId, montant_cents: 4_000, date_paiement: '2026-11-10' },
     ])).rejects.toThrow(/règlements fournisseur/i)
     expect((await db.query('select * from public.finance_paiements where echeance_id=$1', [dueId])).rows).toHaveLength(1)
+  })
+
+  it('nettoie la garde avant de rendre la main et maintient le refus Finance dans la même transaction', async () => {
+    const prospectId = await dossier()
+    await commission(prospectId, 20_000)
+    const id = await reglement(prospectId)
+    await modifier(prospectId, 'recevoir', { id, date_reception: '2026-11-10', montant_recu_cents: 5_000 })
+    const dueId = await scalar<string>(
+      'select id as value from public.finance_echeances where reglement_fournisseur_id=$1', [id],
+    )
+    expect(await nombreGardes()).toBe(0)
+
+    await db.exec('BEGIN;')
+    try {
+      await db.query('select modifier_reglement_fournisseur($1,$2,$3,$4)', [
+        admin, prospectId, 'recevoir', { id, date_reception: '2026-11-11', montant_recu_cents: 6_000 },
+      ])
+      expect(await nombreGardes()).toBe(0)
+      await db.exec('SAVEPOINT tentative_finance_directe;')
+      await expect(db.query('select finance_modifier_dossier($1,$2,$3,$4)', [
+        admin, prospectId, 'echeance', { id: dueId, montant_cents: 7_000, date_prevue: '2026-11-12' },
+      ])).rejects.toThrow(/règlements fournisseur/i)
+      await db.exec('ROLLBACK TO SAVEPOINT tentative_finance_directe;')
+      expect(await nombreGardes()).toBe(0)
+    } finally {
+      await db.exec('ROLLBACK;')
+    }
   })
 
   it('refuse une date de réception future et conserve la ligne sans écriture', async () => {
