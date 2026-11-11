@@ -4,7 +4,7 @@ export default defineEventHandler(async (event) => {
   const client = supabaseAdmin()
   const [societes, beneficiaires, commerciaux] = await Promise.all([
     client.from('prospects').select('societe_id, raison_sociale').order('raison_sociale'),
-    client.from('finance_beneficiaires').select('id, nom').order('nom'),
+    client.from('finance_beneficiaires').select('id, nom').eq('est_ra_energy', false).order('nom'),
     client.from('profiles').select('id, nom').in('role', ['commercial', 'regie_interne', 'regie_externe']).order('nom'),
   ])
   if (societes.error) leverErreurFinance(societes.error)
