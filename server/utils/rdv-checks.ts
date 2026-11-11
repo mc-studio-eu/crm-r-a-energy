@@ -21,7 +21,7 @@ export async function runRdvChecks(params: RdvCheckParams): Promise<RdvCheckResu
 
   const { data: commercial } = await admin
     .from('profiles')
-    .select('id, google_refresh_token, google_calendar_connected, depart_lat, depart_lng')
+    .select('id, google_calendar_connected, depart_lat, depart_lng')
     .eq('id', params.commercialId)
     .single()
   if (!commercial) {
@@ -38,14 +38,15 @@ export async function runRdvChecks(params: RdvCheckParams): Promise<RdvCheckResu
   let conflit: { debut: string, fin: string } | null = null
 
   // Conflits avec les RDV internes déjà planifiés
-  const jour = params.debut.slice(0, 10)
-  const { data: rdvsDuJour } = await admin
+  const { data: rdvsDuJour, error: rdvError } = await admin
     .from('rdv')
     .select('id, debut, fin, lieu_lat, lieu_lng')
     .eq('commercial_id', params.commercialId)
     .eq('statut', 'planifie')
-    .gte('debut', `${jour}T00:00:00Z`)
-    .lte('debut', `${jour}T23:59:59Z`)
+    .lt('debut', new Date(new Date(params.fin).getTime() + 86400_000).toISOString())
+    .gt('fin', new Date(new Date(params.debut).getTime() - 86400_000).toISOString())
+
+  if (rdvError) throw createError({ statusCode: 502, message: 'Vérification des rendez-vous indisponible' })
 
   const autresRdv = (rdvsDuJour ?? []).filter(r => r.id !== params.excludeRdvId)
   for (const r of autresRdv) {
@@ -56,10 +57,18 @@ export async function runRdvChecks(params: RdvCheckParams): Promise<RdvCheckResu
     }
   }
 
-  // Google Calendar FreeBusy si l'agenda est connecté
-  if (dispoOk && commercial.google_calendar_connected && commercial.google_refresh_token) {
-    const accessToken = await refreshAccessToken(commercial.google_refresh_token)
-    const busy = await getBusySlots(accessToken, params.debut, params.fin)
+  // Exclude only the current Google event; don't erase overlapping external events.
+  const { data: credentials } = await admin.from('google_credentials').select('refresh_token').eq('profile_id', params.commercialId).single()
+  if (dispoOk && commercial.google_calendar_connected && credentials) {
+    const accessToken = await refreshAccessToken(credentials.refresh_token)
+    let excludedEvent: string | undefined
+    if (params.excludeRdvId) {
+      const { data: current } = await admin.from('rdv').select('google_event_id').eq('id', params.excludeRdvId).eq('commercial_id', params.commercialId).single()
+      excludedEvent = current?.google_event_id ?? undefined
+    }
+    const busy = excludedEvent
+      ? await getBusySlotsExcept(accessToken, params.debut, params.fin, excludedEvent)
+      : await getBusySlots(accessToken, params.debut, params.fin)
     const conflitGoogle = busy.find(b => overlaps(params.debut, params.fin, b.start, b.end))
     if (conflitGoogle) {
       dispoOk = false

@@ -132,19 +132,19 @@ async function disconnectCalendar() {
             </li>
           </ul>
         </div>
-        <p v-if="message" class="text-sm" :class="message.startsWith('✓') ? 'text-green-700' : 'text-amber-600'">{{ message }}</p>
+        <p v-if="message" class="text-sm" :class="message.startsWith('✓') ? 'text-primary' : 'text-amber-600'">{{ message }}</p>
         <button type="submit" class="btn-primary" :disabled="saving">Enregistrer</button>
       </form>
     </div>
 
     <!-- Google Calendar (ticket 07) -->
-    <div class="card">
+    <div v-if="profile && ['admin', 'commercial', 'regie_interne', 'regie_externe'].includes(profile.role)" class="card">
       <h2 class="mb-2 text-base">Google Agenda</h2>
-      <p v-if="calendarStatus === 'connected'" class="mb-2 text-sm text-green-700">✓ Agenda connecté avec succès.</p>
+      <p v-if="calendarStatus === 'connected'" class="mb-2 text-sm text-primary">✓ Agenda connecté avec succès.</p>
       <p v-if="calendarStatus === 'error'" class="mb-2 text-sm text-red-600">La connexion de l'agenda a échoué, réessayez.</p>
 
       <template v-if="profile?.google_calendar_connected">
-        <p class="mb-3 text-sm text-green-700">✓ Votre agenda Google est connecté : vos disponibilités sont vérifiées automatiquement et les RDV sont ajoutés à votre agenda.</p>
+        <p class="mb-3 text-sm text-primary">✓ Votre agenda Google est connecté : vos disponibilités sont vérifiées automatiquement et les RDV sont ajoutés à votre agenda.</p>
         <button class="btn-secondary" @click="disconnectCalendar">Déconnecter</button>
       </template>
       <template v-else>

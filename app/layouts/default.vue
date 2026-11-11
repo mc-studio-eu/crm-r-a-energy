@@ -11,6 +11,8 @@ watch(user, () => load())
 
 async function logout() {
   await supabase.auth.signOut()
+  clearNuxtData()
+  profile.value = null
   navigateTo('/login')
 }
 
@@ -18,8 +20,10 @@ type NavItem = { to: string, label: string, show: boolean, icon: string }
 
 // icon = clé d'une icône SVG définie dans <NavIcon>
 const nav = computed<NavItem[]>(() => [
-  { to: '/', label: 'Tableau de bord', show: true, icon: 'home' },
-  { to: '/prospects', label: 'Prospects', show: true, icon: 'users' },
+  { to: '/', label: 'Tableau de bord', show: profile.value?.role !== 'apporteur_externe', icon: 'home' },
+  { to: '/prospects', label: 'Dossiers', show: profile.value?.role !== 'apporteur_externe', icon: 'users' },
+  { to: '/societes', label: 'Sociétés', show: profile.value?.role !== 'apporteur_externe', icon: 'users' },
+  { to: '/finances', label: isAdmin.value ? 'Finances' : 'Mes commissions', show: !!profile.value && profile.value.role !== 'telepro', icon: 'home' },
   { to: '/rdv', label: 'Mes RDV', show: profile.value?.role === 'commercial' || profile.value?.role === 'regie_interne', icon: 'calendar' },
   { to: '/planning', label: 'Planning', show: isStaff.value, icon: 'calendar' },
   { to: '/carte', label: 'Carte des RDV', show: isStaff.value, icon: 'map' },

@@ -9,6 +9,7 @@ const bodySchema = z.object({
   lieu_lat: z.number(),
   lieu_lng: z.number(),
   notes: z.string().optional(),
+  qualification: z.enum(['R1', 'R2']).nullable().optional(),
 })
 
 /**
@@ -24,7 +25,9 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'Accès refusé' })
   }
   const admin = supabaseAdmin()
-  const config = useRuntimeConfig()
+  await requireVisibleProspect(event, body.prospect_id)
+  await requireRdvIntervenant(me, body.commercial_id)
+  if (new Date(body.fin) <= new Date(body.debut)) throw createError({ statusCode: 400, message: 'La fin doit suivre le début' })
 
   // Checks bloquants : un RDV refusé n'est pas créé
   const checks = await runRdvChecks({
@@ -38,9 +41,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 422, message: 'Créneau refusé', data: checks })
   }
 
-  const { data: prospect } = await admin
-    .from('prospects').select('raison_sociale').eq('id', body.prospect_id).single()
-
   const { data: rdv, error } = await admin
     .from('rdv')
     .insert({
@@ -53,30 +53,7 @@ export default defineEventHandler(async (event) => {
     .single()
   if (error) throw createError({ statusCode: 500, message: error.message })
 
-  // Event Google Calendar (non bloquant si l'agenda n'est pas connecté)
-  const { data: commercial } = await admin
-    .from('profiles')
-    .select('google_refresh_token, google_calendar_connected')
-    .eq('id', body.commercial_id)
-    .single()
-
-  if (commercial?.google_calendar_connected && commercial.google_refresh_token) {
-    try {
-      const accessToken = await refreshAccessToken(commercial.google_refresh_token)
-      const gEvent = await createCalendarEvent(accessToken, {
-        summary: `RDV — ${prospect?.raison_sociale ?? 'Prospect'}`,
-        description: `Fiche prospect : ${config.public.appUrl}/prospects/${body.prospect_id}`,
-        location: body.lieu,
-        start: body.debut,
-        end: body.fin,
-      })
-      await admin.from('rdv').update({ google_event_id: gEvent.id }).eq('id', rdv.id)
-      rdv.google_event_id = gEvent.id
-    }
-    catch {
-      // L'échec de sync calendrier ne doit pas annuler le RDV créé
-    }
-  }
+  const sync = await syncRdvCalendar(rdv.id)
 
   // Historique sur la fiche prospect
   await admin.from('prospect_activites').insert({
@@ -86,5 +63,5 @@ export default defineEventHandler(async (event) => {
     detail: `RDV planifié le ${new Date(body.debut).toLocaleString('fr-FR', { timeZone: 'Europe/Paris' })}`,
   })
 
-  return { rdv, checks }
+  return { rdv, checks, sync }
 })

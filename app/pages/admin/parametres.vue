@@ -37,7 +37,7 @@ async function save() {
           <input v-model.number="marge" type="number" min="0" max="120" class="input !w-28">
         </div>
         <button type="submit" class="btn-primary">Enregistrer</button>
-        <span v-if="saved" class="text-sm text-green-700">✓ Enregistré</span>
+        <span v-if="saved" class="text-sm text-primary">✓ Enregistré</span>
       </form>
     </div>
   </div>

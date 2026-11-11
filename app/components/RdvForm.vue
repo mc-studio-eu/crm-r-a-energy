@@ -28,6 +28,7 @@ const form = reactive({
   duree: 60,
   lieu: [props.prospect.adresse, props.prospect.code_postal, props.prospect.ville].filter(Boolean).join(', '),
   notes: '',
+  qualification: '' as '' | 'R1' | 'R2',
 })
 
 const checking = ref(false)
@@ -57,6 +58,7 @@ async function runCheck() {
     checkResult.value = await $fetch<RdvCheckResult>('/api/rdv/check', {
       method: 'POST',
       body: {
+        prospect_id: props.prospect.id,
         commercial_id: form.commercial_id,
         debut: debutISO.value,
         fin: finISO.value,
@@ -92,10 +94,9 @@ async function save() {
         lieu_lat: props.prospect.lat,
         lieu_lng: props.prospect.lng,
         notes: form.notes || undefined,
+        qualification: form.qualification || null,
       },
     })
-    // Le RDV placé fait avancer le pipeline
-    await supabase.from('prospects').update({ statut: 'rdv_place' }).eq('id', props.prospect.id)
     emit('created')
   }
   catch (e: unknown) {
@@ -123,6 +124,10 @@ async function save() {
             {{ displayName(c.nom) }}{{ c.google_calendar_connected ? '' : ' (agenda non connecté)' }}
           </option>
         </select>
+      </div>
+      <div>
+        <label class="label">Étape du rendez-vous</label>
+        <select v-model="form.qualification" class="input"><option value="">Non renseignée</option><option>R1</option><option>R2</option></select>
       </div>
       <div>
         <label class="label">Date *</label>
@@ -154,12 +159,12 @@ async function save() {
     <!-- Résultat des checks -->
     <div v-if="checking" class="text-sm text-gray-500">Vérification dispo + itinéraire…</div>
     <div v-else-if="checkResult" class="space-y-2 text-sm">
-      <p :class="checkResult.disponibilite.ok ? 'text-green-700' : 'text-red-600'">
+      <p :class="checkResult.disponibilite.ok ? 'text-primary' : 'text-red-600'">
         {{ checkResult.disponibilite.ok
           ? '✓ Créneau libre dans l\'agenda'
           : `✗ Conflit d'agenda : occupé de ${new Date(checkResult.disponibilite.conflit!.debut).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })} à ${new Date(checkResult.disponibilite.conflit!.fin).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' })}` }}
       </p>
-      <p :class="checkResult.trajet.ok ? 'text-green-700' : 'text-red-600'">
+      <p :class="checkResult.trajet.ok ? 'text-primary' : 'text-red-600'">
         <template v-if="checkResult.trajet.tempsTrajetMin != null">
           {{ checkResult.trajet.ok ? '✓' : '✗' }}
           Trajet estimé : {{ checkResult.trajet.tempsTrajetMin }} min

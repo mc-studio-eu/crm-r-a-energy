@@ -8,11 +8,12 @@ const bodySchema = z.object({
   lieu_lat: z.number().optional(),
   lieu_lng: z.number().optional(),
   notes: z.string().optional(),
+  qualification: z.enum(['R1', 'R2']).nullable().optional(),
 })
 
 /** Modification / annulation d'un RDV + synchronisation Google Calendar (ticket 07). */
 export default defineEventHandler(async (event) => {
-  const me = await requireRole(event)
+  const me = await requireRole(event, ['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe'])
   const id = getRouterParam(event, 'id')!
   const body = bodySchema.parse(await readBody(event))
   const admin = supabaseAdmin()
@@ -29,10 +30,14 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 403, message: 'Accès refusé' })
   }
 
+  await requireVisibleProspect(event, rdv.prospect_id)
+
   // Re-check si le créneau change
   const debut = body.debut ?? rdv.debut
   const fin = body.fin ?? rdv.fin
-  if ((body.debut || body.fin) && (body.statut ?? rdv.statut) === 'planifie') {
+  if (new Date(fin) <= new Date(debut)) throw createError({ statusCode: 400, message: 'Créneau invalide' })
+  if ((body.debut || body.fin || body.lieu_lat !== undefined || body.lieu_lng !== undefined || body.statut === 'planifie') && (body.statut ?? rdv.statut) === 'planifie') {
+    await requireRdvIntervenant(me, rdv.commercial_id)
     const checks = await runRdvChecks({
       commercialId: rdv.commercial_id,
       debut,
@@ -49,33 +54,6 @@ export default defineEventHandler(async (event) => {
   const { error } = await admin.from('rdv').update(body).eq('id', id)
   if (error) throw createError({ statusCode: 500, message: error.message })
 
-  // Sync Google Calendar
-  if (rdv.google_event_id) {
-    const { data: commercial } = await admin
-      .from('profiles')
-      .select('google_refresh_token, google_calendar_connected')
-      .eq('id', rdv.commercial_id)
-      .single()
-
-    if (commercial?.google_calendar_connected && commercial.google_refresh_token) {
-      try {
-        const accessToken = await refreshAccessToken(commercial.google_refresh_token)
-        if (body.statut === 'annule') {
-          await deleteCalendarEvent(accessToken, rdv.google_event_id)
-          await admin.from('rdv').update({ google_event_id: null }).eq('id', id)
-        }
-        else if (body.debut || body.fin || body.lieu) {
-          await updateCalendarEvent(accessToken, rdv.google_event_id, {
-            summary: `RDV — ${rdv.prospects?.raison_sociale ?? 'Prospect'}`,
-            location: body.lieu ?? rdv.lieu,
-            start: debut,
-            end: fin,
-          })
-        }
-      }
-      catch { /* sync non bloquante */ }
-    }
-  }
-
-  return { ok: true }
+  const sync = await syncRdvCalendar(id)
+  return { ok: true, sync }
 })

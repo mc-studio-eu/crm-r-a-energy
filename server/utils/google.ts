@@ -1,6 +1,6 @@
 /**
  * Intégration Google (tickets 07 + 08) via REST — pas de SDK lourd.
- * - OAuth 2.0 par commercial (refresh token stocké dans profiles, service role only)
+ * - OAuth 2.0 par commercial (credentials privés, service role only)
  * - FreeBusy : check de dispo en temps réel
  * - Events : création / mise à jour / suppression dans l'agenda du commercial
  * - Routes API : temps de trajet voiture (avec cache mémoire)
@@ -29,6 +29,7 @@ export async function exchangeCodeForTokens(code: string, redirectUri: string) {
   const config = useRuntimeConfig()
   return await $fetch<{ access_token: string, refresh_token?: string }>(GOOGLE_TOKEN_URL, {
     method: 'POST',
+    timeout: 15000,
     body: new URLSearchParams({
       code,
       client_id: config.googleClientId,
@@ -45,6 +46,7 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
   try {
     const res = await $fetch<{ access_token: string }>(GOOGLE_TOKEN_URL, {
       method: 'POST',
+    timeout: 15000,
       body: new URLSearchParams({
         refresh_token: refreshToken,
         client_id: config.googleClientId,
@@ -64,18 +66,23 @@ export async function refreshAccessToken(refreshToken: string): Promise<string> 
 
 /** FreeBusy : renvoie les créneaux occupés du commercial sur la fenêtre donnée. */
 export async function getBusySlots(accessToken: string, timeMin: string, timeMax: string) {
-  const res = await $fetch<{ calendars: { primary?: { busy: { start: string, end: string }[] } } }>(
+  const res = await $fetch<{ calendars: { primary?: { busy?: { start: string, end: string }[], errors?: unknown[] } } }>(
     `${CALENDAR_API}/freeBusy`,
     {
       method: 'POST',
+    timeout: 15000,
       headers: { Authorization: `Bearer ${accessToken}` },
       body: { timeMin, timeMax, items: [{ id: 'primary' }] },
     },
   )
-  return res.calendars.primary?.busy ?? []
+  if (!res.calendars.primary?.busy || res.calendars.primary.errors?.length) {
+    throw createError({ statusCode: 502, message: 'Disponibilité Google indisponible. Réessayez après reconnexion.' })
+  }
+  return res.calendars.primary.busy
 }
 
 export interface CalendarEventInput {
+  id?: string
   summary: string
   description?: string
   location?: string
@@ -86,8 +93,10 @@ export interface CalendarEventInput {
 export async function createCalendarEvent(accessToken: string, input: CalendarEventInput) {
   return await $fetch<{ id: string }>(`${CALENDAR_API}/calendars/primary/events`, {
     method: 'POST',
+    timeout: 15000,
     headers: { Authorization: `Bearer ${accessToken}` },
     body: {
+      id: input.id,
       summary: input.summary,
       description: input.description,
       location: input.location,
@@ -100,6 +109,7 @@ export async function createCalendarEvent(accessToken: string, input: CalendarEv
 export async function updateCalendarEvent(accessToken: string, eventId: string, input: CalendarEventInput) {
   return await $fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
     method: 'PATCH',
+    timeout: 15000,
     headers: { Authorization: `Bearer ${accessToken}` },
     body: {
       summary: input.summary,
@@ -112,10 +122,44 @@ export async function updateCalendarEvent(accessToken: string, eventId: string, 
 }
 
 export async function deleteCalendarEvent(accessToken: string, eventId: string) {
-  await $fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${accessToken}` },
-  }).catch(() => { /* event déjà supprimé côté Google : non bloquant */ })
+  try {
+    await $fetch(`${CALENDAR_API}/calendars/primary/events/${eventId}`, {
+      method: 'DELETE', timeout: 15000, headers: { Authorization: `Bearer ${accessToken}` },
+    })
+  }
+  catch (error) {
+    if (![404, 410].includes(googleHttpStatus(error))) throw error
+  }
+}
+
+export function googleHttpStatus(error: unknown): number {
+  const e = error as { status?: number, statusCode?: number, response?: { status?: number } }
+  return e.statusCode ?? e.status ?? e.response?.status ?? 0
+}
+
+/** Events list, instead of FreeBusy, lets an edit exclude exactly its own event. */
+export async function getBusySlotsExcept(accessToken: string, timeMin: string, timeMax: string, excludedId: string) {
+  const slots: { start: string, end: string }[] = []
+  let pageToken: string | undefined
+  do {
+    const res = await $fetch<{
+      nextPageToken?: string
+      items?: { id: string, status?: string, transparency?: string, start?: { dateTime?: string, date?: string }, end?: { dateTime?: string, date?: string } }[]
+    }>(`${CALENDAR_API}/calendars/primary/events`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      timeout: 15000,
+      query: { timeMin, timeMax, singleEvents: true, pageToken, maxResults: 2500 },
+    })
+    for (const event of res.items ?? []) {
+      if (event.id === excludedId || event.status === 'cancelled' || event.transparency === 'transparent') continue
+      // All-day events in this time window block the requested slot regardless of browser timezone.
+      const start = event.start?.dateTime ?? (event.start?.date ? timeMin : undefined)
+      const end = event.end?.dateTime ?? (event.end?.date ? timeMax : undefined)
+      if (start && end) slots.push({ start, end })
+    }
+    pageToken = res.nextPageToken
+  } while (pageToken)
+  return slots
 }
 
 // ---------- Itinéraire (ticket 08) ----------
@@ -141,6 +185,7 @@ export async function getDriveTimeMinutes(
   const config = useRuntimeConfig()
   const res = await $fetch<{ routes?: { duration: string }[] }>(ROUTES_API, {
     method: 'POST',
+    timeout: 15000,
     headers: {
       'X-Goog-Api-Key': config.googleMapsApiKey,
       'X-Goog-FieldMask': 'routes.duration',
