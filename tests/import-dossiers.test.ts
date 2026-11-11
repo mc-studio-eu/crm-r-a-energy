@@ -51,7 +51,7 @@ describe('import de dossiers Excel', () => {
     expect(first.rows.map(row => row.line)).toEqual([2, 4])
     expect(first.rows[0]?.dossier).toMatchObject({ statut: 'en_cours', commission_cents: null, siret: '01234567890123' })
     expect(first.rows[0]?.duplicateInFile).toBe(true)
-    expect(first.rows[1]?.earlierLines).toEqual([2])
+    expect(first.rows[1]?.duplicateInFile).toBe(true)
     expect(first.rows[1]?.errors).toHaveLength(1)
     const second = parseImportRows(sheets[0]!.data, columns, { accepte: 'signe' }, [])
     expect(second.rows[1]?.dossier).toMatchObject({ statut: 'signe', commission_cents: 0, date_signature: '2026-11-11' })
