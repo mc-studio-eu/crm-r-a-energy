@@ -126,6 +126,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
             <th>Contact</th>
             <th>Ville</th>
             <th>Statut</th>
+            <th>Note /10</th>
             <th>Commercial</th>
             <th />
           </tr>
@@ -144,6 +145,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
             </td>
             <td>{{ p.ville }} <span class="text-xs text-gray-400">{{ p.code_postal }}</span></td>
             <td><StatusBadge :statut="p.statut" /></td>
+            <td class="whitespace-nowrap">{{ p.scoring_entreprise != null ? `${p.scoring_entreprise}/10` : '—' }}</td>
             <td>{{ nomCommercial(p.assigne_a) }}</td>
             <td>
               <select
@@ -156,7 +158,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
             </td>
           </tr>
           <tr v-if="!data?.rows.length">
-            <td colspan="6" class="py-10 text-center text-gray-400">Aucun dossier ne correspond aux filtres.</td>
+            <td colspan="7" class="py-10 text-center text-gray-400">Aucun dossier ne correspond aux filtres.</td>
           </tr>
         </tbody>
       </table>
