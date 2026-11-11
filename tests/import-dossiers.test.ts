@@ -104,6 +104,42 @@ describe('import de dossiers Excel', () => {
     expect(preview.rows[3]?.errors).toContain('La société dépasse 255 caractères avec le suffixe de l’énergie.')
   })
 
+  it('résout les fournisseurs du catalogue par code ou nom et signale les fournisseurs inconnus ou inactifs', () => {
+    const fournisseurs = [
+      { code: 'fournisseur-uuid-1', nom: 'Énergie Nouvelle', actif: true },
+      { code: 'fournisseur-uuid-2', nom: 'Fournisseur arrêté', actif: false },
+    ]
+    const rows = [
+      ['Société', 'Commission HT', 'Statut', 'Fournisseur'],
+      ['Par code', 100, 'Signé', 'fournisseur-uuid-1'],
+      ['Par nom', 100, 'Signé', 'energie nouvelle'],
+      ['Inactif', 100, 'Signé', 'Fournisseur arrêté'],
+      ['Inconnu', 100, 'Signé', 'Autre fournisseur'],
+    ]
+    const preview = parseImportRows(rows, {
+      raison_sociale: 0, commission_ht: 1, statut: 2, fournisseur: 3,
+    }, {}, [], false, fournisseurs)
+
+    expect(preview.rows[0]?.dossier.fournisseur).toBe('fournisseur-uuid-1')
+    expect(preview.rows[1]?.dossier.fournisseur).toBe('fournisseur-uuid-1')
+    expect(preview.rows[2]?.dossier.fournisseur).toBeNull()
+    expect(preview.rows[2]?.errors).toContain('Fournisseur désactivé.')
+    expect(preview.rows[3]?.dossier.fournisseur).toBeNull()
+    expect(preview.rows[3]?.errors).toContain('Fournisseur inconnu.')
+  })
+
+  it('priorise le nom du fournisseur sur un ancien code qui porte le même texte', () => {
+    const preview = parseImportRows([
+      ['Société', 'Commission HT', 'Statut', 'Fournisseur'],
+      ['Par nom', 100, 'Signé', 'Mint'],
+    ], { raison_sociale: 0, commission_ht: 1, statut: 2, fournisseur: 3 }, {}, [], false, [
+      { code: 'mint', nom: 'Autre', actif: true },
+      { code: 'fournisseur-xyz', nom: 'Mint', actif: true },
+    ])
+
+    expect(preview.rows[0]?.dossier.fournisseur).toBe('fournisseur-xyz')
+  })
+
   it('rejette un fichier incompatible ou une feuille hors limites', async () => {
     await expect(readImportWorkbook(Buffer.from('A;B;C'))).rejects.toMatchObject({ statusCode: 422 })
     const buffer = await writeXlsxFile([Array.from({ length: 65 }, (_, index) => `Colonne ${index}`)]).toBuffer()

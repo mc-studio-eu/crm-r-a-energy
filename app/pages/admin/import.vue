@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FOURNISSEURS, PROSPECT_STATUTS, type ProspectStatut } from '~~/shared/types'
+import { PROSPECT_STATUTS, type ProspectStatut } from '~~/shared/types'
 import {
   IMPORT_COLUMNS, IMPORT_COLUMN_KEYS, IMPORT_MAX_BYTES, IMPORT_MAX_COLUMNS, IMPORT_MAX_MB, IMPORT_MAX_ROWS,
   inferImportMapping,
@@ -33,6 +33,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil((preview.value?.rows.len
 const visibleRows = computed(() => preview.value?.rows.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE) ?? [])
 const errorCount = computed(() => preview.value?.rows.filter(row => row.errors.length).length ?? 0)
 const profileName = computed(() => new Map(preview.value?.profiles.map(profile => [profile.id, profile.nom])))
+const fournisseurName = computed(() => new Map(preview.value?.fournisseurs.map(f => [f.code, f.nom])))
 const currency = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
 
 function isPotentialDuplicate(row: ImportRow) {
@@ -41,7 +42,7 @@ function isPotentialDuplicate(row: ImportRow) {
 
 const selection = computed<ImportSelection[]>(() => (preview.value?.rows ?? [])
   .filter(row => selectedLines.value.has(row.line) && !row.errors.length)
-  .map(row => ({ line: row.line, allowDuplicate: isPotentialDuplicate(row) })))
+  .map(row => ({ line: row.line, allowDuplicate: isPotentialDuplicate(row), fournisseur: row.dossier.fournisseur })))
 
 function resetPreview() {
   preview.value = null
@@ -271,7 +272,7 @@ async function confirmImport() {
                   </div>
                   <dl class="mt-1 text-xs text-gray-600">
                     <div v-if="row.dossier.fournisseur || row.dossier.energie">
-                      {{ row.dossier.fournisseur ? FOURNISSEURS[row.dossier.fournisseur] : '' }}
+                      {{ row.dossier.fournisseur ? fournisseurName.get(row.dossier.fournisseur) : '' }}
                       {{ row.dossier.energie === 'gaz' ? 'Gaz' : row.dossier.energie === 'electricite' ? 'Électricité' : '' }}
                     </div>
                     <div v-if="row.dossier.date_signature"><dt class="inline">Signature</dt> <dd class="inline">{{ row.dossier.date_signature }}</dd></div>

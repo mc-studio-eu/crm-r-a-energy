@@ -1,4 +1,4 @@
-import { ASSIGNABLE_ROLES, FOURNISSEURS, type Fournisseur, type ProspectStatut, type UserRole } from './types'
+import { ASSIGNABLE_ROLES, type Fournisseur, type ProspectStatut, type UserRole } from './types'
 
 export const IMPORT_MAX_MB = 2
 export const IMPORT_MAX_BYTES = IMPORT_MAX_MB * 1024 * 1024
@@ -25,7 +25,7 @@ export type ImportMapping = Partial<Record<ImportColumn, number>>
 export type ImportStatusMapping = Record<string, ProspectStatut>
 export type ImportCell = string | number | Date | boolean | null
 export type ImportProfile = { id: string, nom: string, role: UserRole }
-export type ImportSelection = { line: number, allowDuplicate: boolean }
+export type ImportSelection = { line: number, allowDuplicate: boolean, fournisseur: string | null }
 
 export interface ImportSheet {
   name: string
@@ -38,7 +38,7 @@ export interface ImportDossier {
   siret: string | null
   commission_cents: number | null
   statut: ProspectStatut | null
-  fournisseur: Fournisseur | null
+  fournisseur: string | null
   energie: 'gaz' | 'electricite' | null
   date_signature: string | null
   debut_livraison: string | null
@@ -60,6 +60,7 @@ export interface ImportPreview {
   rows: ImportRow[]
   unknownStatuses: { key: string, label: string }[]
   profiles: ImportProfile[]
+  fournisseurs: Fournisseur[]
 }
 
 export interface ImportResult {
@@ -154,9 +155,6 @@ const STATUS_ALIASES = new Map<string, ProspectStatut>([
   ['rdv place', 'rdv_place'], ['rendez vous place', 'rdv_place'], ['rendez-vous place', 'rdv_place'],
   ['signe', 'signe'], ['perdu', 'perdu'],
 ])
-const PROVIDERS = new Map<string, Fournisseur>(Object.entries(FOURNISSEURS).flatMap(([id, label]) => [
-  [normalizeImportText(id), id as Fournisseur], [normalizeImportText(label), id as Fournisseur],
-]))
 const ENERGIES = new Map<string, NonNullable<ImportDossier['energie']>>([
   ['gaz', 'gaz'], ['electricite', 'electricite'], ['elec', 'electricite'],
 ])
@@ -183,9 +181,12 @@ export function parseImportRows(
   statuses: ImportStatusMapping,
   profiles: ImportProfile[],
   epoch1904 = false,
+  fournisseurs: Fournisseur[] = [],
 ): ImportPreview {
   const rows: ImportRow[] = []
   const unknown = new Map<string, string>()
+  const fournisseursParNom = new Map(fournisseurs.map(f => [normalizeImportText(f.nom), f]))
+  const fournisseursParCode = new Map(fournisseurs.map(f => [normalizeImportText(f.code), f]))
 
   for (const [index, row] of sheet.entries()) {
     if (index === 0 || isBlankImportRow(row)) continue
@@ -228,10 +229,13 @@ export function parseImportRows(
       unknown.set(statusKey, statusLabel)
     }
 
-    const provider = normalizeImportText(text('fournisseur'))
+    const fournisseurSaisi = text('fournisseur')
+    const cleFournisseur = normalizeImportText(fournisseurSaisi)
+    const fournisseur = fournisseursParNom.get(cleFournisseur) ?? fournisseursParCode.get(cleFournisseur)
     const energy = normalizeImportText(text('energie'))
     const energie = ENERGIES.get(energy) ?? null
-    if (provider && !PROVIDERS.has(provider)) errors.push('Fournisseur inconnu.')
+    if (fournisseurSaisi && !fournisseur) errors.push('Fournisseur inconnu.')
+    if (fournisseur && !fournisseur.actif) errors.push('Fournisseur désactivé.')
     if (energy && !energie) errors.push('Énergie inconnue. Utilisez Gaz ou Électricité.')
     const date_signature = checked('date_signature', value => parseImportDate(value, epoch1904))
     const debut_livraison = checked('debut_livraison', value => parseImportDate(value, epoch1904))
@@ -252,7 +256,7 @@ export function parseImportRows(
       siret: siret?.slice(0, 32) ?? null,
       statut: status ?? null,
       commission_cents: checked('commission_ht', parseImportCommission),
-      fournisseur: PROVIDERS.get(provider) ?? null,
+      fournisseur: fournisseur?.actif ? fournisseur.code : null,
       energie,
       date_signature,
       debut_livraison,
@@ -271,5 +275,5 @@ export function parseImportRows(
       duplicateInFile: matching.length > 0,
     })
   }
-  return { rows, unknownStatuses: Array.from(unknown, ([key, label]) => ({ key, label })), profiles }
+  return { rows, unknownStatuses: Array.from(unknown, ([key, label]) => ({ key, label })), profiles, fournisseurs }
 }

@@ -1,15 +1,19 @@
 import { z } from 'zod'
-import { FINANCE_TYPES, MAX_FINANCE_CENTS } from '~~/shared/finance'
+import { FINANCE_TYPES, MAX_FINANCE_BENEFICIAIRES, MAX_FINANCE_CENTS } from '~~/shared/finance'
 
 const cents = z.number().int().min(1).max(MAX_FINANCE_CENTS)
 const uuid = z.uuid()
 const note = z.string().trim().max(500)
+const repartition = z.object({ beneficiaire_id: uuid, fonction: z.string().trim().min(1).max(80) })
 
 export const financeActionSchema = z.discriminatedUnion('action', [
   z.object({
     action: z.literal('commission'),
     commission_cents: z.number().int().min(0).max(MAX_FINANCE_CENTS),
-    repartitions: z.array(z.object({ beneficiaire_id: uuid, taux_bps: z.number().int().min(0).max(10_000), fonction: z.string().trim().min(1).max(80) })).max(2),
+    repartitions: z.array(z.union([
+      repartition.extend({ taux_bps: z.number().int().min(0).max(10_000), montant_cents: z.never().optional() }),
+      repartition.extend({ montant_cents: z.number().int().min(0).max(MAX_FINANCE_CENTS), taux_bps: z.never().optional() }),
+    ])).max(MAX_FINANCE_BENEFICIAIRES),
   }),
   z.object({
     action: z.literal('echeance'),

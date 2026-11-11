@@ -26,7 +26,12 @@ async function save() {
 <template>
   <div class="max-w-xl">
     <h1 class="mb-6 text-2xl">Paramètres</h1>
-    <div class="card">
+    <section class="card mb-4">
+      <h2 class="mb-3 text-base">Référentiels</h2>
+      <p class="mb-3 text-sm text-gray-500">Gérez les fournisseurs, les sociétés et les comptes utilisés dans le CRM.</p>
+      <NuxtLink to="/admin/referentiels" class="btn-secondary">Ouvrir les référentiels</NuxtLink>
+    </section>
+    <section class="card">
       <h2 class="mb-3 text-base">Règle d'itinéraire</h2>
       <p class="mb-3 text-sm text-gray-500">
         Marge de sécurité ajoutée au temps de trajet lors de la vérification d'un créneau de RDV.
@@ -39,6 +44,6 @@ async function save() {
         <button type="submit" class="btn-primary">Enregistrer</button>
         <span v-if="saved" class="text-sm text-primary">✓ Enregistré</span>
       </form>
-    </div>
+    </section>
   </div>
 </template>

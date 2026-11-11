@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
-  ASSIGNABLE_ROLES, ENERGIES, FOURNISSEURS, PROSPECT_STATUTS,
-  type Energie, type Fournisseur, type Prospect, type ProspectStatut,
+  ASSIGNABLE_ROLES, ENERGIES, PROSPECT_STATUTS,
+  type Energie, type Profile, type Prospect, type ProspectStatut,
 } from '~~/shared/types'
 
 const props = defineProps<{ prospect?: Prospect | null }>()
@@ -19,9 +19,10 @@ const form = reactive({
   adresse: props.prospect?.adresse ?? '',
   code_postal: props.prospect?.code_postal ?? '',
   ville: props.prospect?.ville ?? '',
-  teleprospecteur_id: props.prospect?.teleprospecteur_id
-    ?? (profile.value?.role === 'telepro' ? profile.value.id : ''),
-  fournisseur: (props.prospect?.fournisseur ?? '') as Fournisseur | '',
+  teleprospecteur_id: props.prospect
+    ? (props.prospect.teleprospecteur_id ?? '')
+    : (profile.value?.role === 'telepro' ? profile.value.id : ''),
+  fournisseur: props.prospect?.fournisseur ?? '',
   energie: (props.prospect?.energie ?? '') as Energie | '',
   date_signature: props.prospect?.date_signature ?? '',
   debut_livraison: props.prospect?.debut_livraison ?? '',
@@ -33,16 +34,24 @@ const form = reactive({
 })
 const identite = reactive({ raison_sociale: props.prospect?.raison_sociale ?? '', siret: props.prospect?.siret ?? '' })
 
-const { data: commerciaux } = await useAsyncData('form-commerciaux', async () => {
-  const { data } = await supabase
-    .from('profiles').select('id, nom').in('role', ASSIGNABLE_ROLES).eq('actif', true).order('nom')
-  return data ?? []
+const { data: intervenants, error: erreurIntervenants, refresh: refreshIntervenants } = await useAsyncData('form-intervenants', async () => {
+  const { data, error } = await supabase.from('profiles').select('id, nom, role, actif').order('nom')
+  if (error) throw error
+  return data as Pick<Profile, 'id' | 'nom' | 'role' | 'actif'>[]
 })
+const commerciaux = computed(() => intervenants.value?.filter(p => p.actif && ASSIGNABLE_ROLES.includes(p.role)) ?? [])
+const teleprospecteurs = computed(() => intervenants.value?.filter(p => p.actif && p.role === 'telepro') ?? [])
+const nomIntervenant = (id: string) => {
+  const compte = intervenants.value?.find(p => p.id === id)
+  return compte ? displayName(compte.nom) : 'Intervenant actuel'
+}
 
-const { data: teleprospecteurs } = await useAsyncData('form-teleprospecteurs', async () => {
-  const { data } = await supabase
-    .from('profiles').select('id, nom').eq('role', 'telepro').eq('actif', true).order('nom')
-  return data ?? []
+const { data: fournisseurs, error: erreurFournisseurs, refresh: refreshFournisseurs } = await useFournisseurs()
+const fournisseursActifs = computed(() => fournisseurs.value.filter(f => f.actif))
+const fournisseurHistorique = computed(() => {
+  const code = props.prospect?.fournisseur
+  if (!code || fournisseursActifs.value.some(f => f.code === code)) return null
+  return { code, nom: fournisseurs.value.find(f => f.code === code)?.nom ?? code }
 })
 
 const saving = ref(false)
@@ -222,8 +231,17 @@ async function save() {
 
   try {
     if (props.prospect) {
+      const { fournisseur, assigne_a, teleprospecteur_id, raison_sociale, siret, ...autresChamps } = payload
+      const changements = {
+        ...autresChamps,
+        ...(fournisseur !== props.prospect.fournisseur ? { fournisseur } : {}),
+        ...(assigne_a !== props.prospect.assigne_a ? { assigne_a } : {}),
+        ...(teleprospecteur_id !== props.prospect.teleprospecteur_id ? { teleprospecteur_id } : {}),
+        ...(raison_sociale !== props.prospect.raison_sociale ? { raison_sociale } : {}),
+        ...(siret !== props.prospect.siret ? { siret } : {}),
+      }
       const { data, error: err } = await supabase.from('prospects')
-        .update(payload).eq('id', props.prospect.id).select('id').single()
+        .update(changements).eq('id', props.prospect.id).select('id').single()
       if (err) throw err
       emit('saved', data.id)
       return
@@ -299,20 +317,29 @@ async function save() {
         <label class="label">Email</label>
         <input v-model="form.email" type="email" class="input">
       </div>
-      <div>
-        <label class="label">Téléprospecteur</label>
-        <select v-model="form.teleprospecteur_id" class="input">
+      <label class="block">
+        <span class="label">Téléprospecteur</span>
+        <select v-model="form.teleprospecteur_id" class="input" :disabled="!!erreurIntervenants">
           <option value="">Non renseigné</option>
+          <option v-if="prospect?.teleprospecteur_id && !teleprospecteurs.some(t => t.id === prospect?.teleprospecteur_id)" :value="prospect.teleprospecteur_id" disabled>
+            {{ nomIntervenant(prospect.teleprospecteur_id) }} (indisponible)
+          </option>
           <option v-for="t in teleprospecteurs" :key="t.id" :value="t.id">{{ displayName(t.nom) }}</option>
         </select>
-      </div>
-      <div>
-        <label class="label">Fournisseur</label>
-        <select v-model="form.fournisseur" class="input">
+      </label>
+      <label class="block">
+        <span class="label">Fournisseur</span>
+        <select v-model="form.fournisseur" class="input" :disabled="!!erreurFournisseurs">
           <option value="">Non renseigné</option>
-          <option v-for="(label, value) in FOURNISSEURS" :key="value" :value="value">{{ label }}</option>
+          <option v-if="fournisseurHistorique" :value="fournisseurHistorique.code" disabled>
+            {{ fournisseurHistorique.nom }} (indisponible)
+          </option>
+          <option v-for="f in fournisseursActifs" :key="f.code" :value="f.code">{{ f.nom }}</option>
         </select>
-      </div>
+      </label>
+      <p v-if="erreurFournisseurs" class="text-sm text-red-600 md:col-span-2" role="alert">
+        Impossible de charger les fournisseurs. <button type="button" class="underline" @click="refreshFournisseurs()">Réessayer</button>
+      </p>
       <label class="block">
         <span class="label">Énergie</span>
         <select v-model="form.energie" class="input">
@@ -372,13 +399,19 @@ async function save() {
         <label class="label">Ville</label>
         <input v-model="form.ville" class="input" @input="adresseCoords = null">
       </div>
-      <div class="md:col-span-2">
-        <label class="label">Commercial assigné</label>
-        <select v-model="form.assigne_a" class="input">
+      <label class="block md:col-span-2">
+        <span class="label">Commercial assigné</span>
+        <select v-model="form.assigne_a" class="input" :disabled="!!erreurIntervenants">
           <option value="">Non assigné</option>
+          <option v-if="prospect?.assigne_a && !commerciaux.some(c => c.id === prospect?.assigne_a)" :value="prospect.assigne_a" disabled>
+            {{ nomIntervenant(prospect.assigne_a) }} (indisponible)
+          </option>
           <option v-for="c in commerciaux" :key="c.id" :value="c.id">{{ displayName(c.nom) }}</option>
         </select>
-      </div>
+      </label>
+      <p v-if="erreurIntervenants" class="text-sm text-red-600 md:col-span-2" role="alert">
+        Impossible de charger les intervenants. <button type="button" class="underline" @click="refreshIntervenants()">Réessayer</button>
+      </p>
       <div class="md:col-span-2">
         <label class="label">Notes</label>
         <textarea v-model="form.notes" rows="3" class="input" />

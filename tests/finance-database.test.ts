@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { PGlite } from '@electric-sql/pglite'
+import { MAX_FINANCE_CENTS, type FinanceDossier } from '../shared/finance'
 import { createTestDatabase, seedUser } from './helpers/database'
 
 describe('Finance PostgreSQL transactions', () => {
@@ -25,6 +26,9 @@ describe('Finance PostgreSQL transactions', () => {
   function mutate(id: string, action: string, payload: unknown) {
     return scalar('select finance_modifier_dossier($1,$2,$3,$4) as id', [admin, id, action, payload])
   }
+  async function lire(id: string) {
+    return (await db.query<{ result: FinanceDossier }>('select finance_lire_dossier($1,$2) as result', [admin, id])).rows[0]!.result
+  }
 
   it('conserve le centime pour un partage 50/50 sur une commission de 0,01 €', async () => {
     const id = await dossier()
@@ -33,13 +37,46 @@ describe('Finance PostgreSQL transactions', () => {
     expect(parts.rows.reduce((sum, p) => sum + Number(p.montant_cents), 0)).toBe(1)
   })
 
-  it('refuse plus de deux bénéficiaires, doublons et pourcentages au-delà de 100 %', async () => {
+  it('refuse les doublons et pourcentages au-delà de 100 %', async () => {
     const id = await dossier()
     const part = { beneficiaire_id: beneficiary, taux_bps: 4000 }
     for (const repartitions of [[part, part, part], [part, part], [{ ...part, taux_bps: 10001 }]]) {
       await expect(mutate(id, 'commission', { commission_cents: 1000000, repartitions })).rejects.toThrow()
     }
     expect((await db.query('select * from finance_commissions where prospect_id=$1', [id])).rows).toHaveLength(0)
+  })
+
+  it('conserve le montant exact et son mode de saisie avec une part au taux', async () => {
+    const id = await dossier()
+    const repartitions = [{ beneficiaire_id: beneficiary, montant_cents: 1 }, { beneficiaire_id: second, taux_bps: 2500 }]
+    await mutate(id, 'commission', { commission_cents: MAX_FINANCE_CENTS, repartitions })
+    expect((await lire(id)).repartitions).toMatchObject([
+      { taux_bps: 0, montant_cents: 1, saisie_montant: true },
+      { taux_bps: 2500, montant_cents: MAX_FINANCE_CENTS / 4, saisie_montant: false },
+    ])
+    await mutate(id, 'commission', { commission_cents: 7, repartitions })
+    expect((await lire(id)).repartitions).toMatchObject([
+      { taux_bps: 1429, montant_cents: 1, saisie_montant: true },
+      { taux_bps: 2500, montant_cents: 2, saisie_montant: false },
+    ])
+  })
+
+  it('borne la somme des centimes sans additionner les taux calculés', async () => {
+    const id = await dossier()
+    await mutate(id, 'commission', {
+      commission_cents: 100_000,
+      repartitions: [{ beneficiaire_id: beneficiary, montant_cents: 50_005 }, { beneficiaire_id: second, montant_cents: 49_995 }],
+    })
+    expect((await lire(id)).repartitions).toMatchObject([
+      { montant_cents: 50_005, taux_bps: 5001 }, { montant_cents: 49_995, taux_bps: 5000 },
+    ])
+    await expect(mutate(id, 'commission', {
+      commission_cents: 100,
+      repartitions: [{ beneficiaire_id: beneficiary, montant_cents: 51 }, { beneficiaire_id: second, taux_bps: 5000 }],
+    })).rejects.toThrow(/dépasser la commission totale/)
+    expect((await lire(id)).commission_cents).toBe(100_000)
+    await mutate(id, 'commission', { commission_cents: 0, repartitions: [{ beneficiaire_id: beneficiary, montant_cents: 0 }] })
+    expect((await lire(id)).repartitions).toMatchObject([{ montant_cents: 0, taux_bps: 0, saisie_montant: true }])
   })
 
   it('garantit les soldes avec paiements partiels, corrections et réductions de commission', async () => {
