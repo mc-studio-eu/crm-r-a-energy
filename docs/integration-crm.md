@@ -32,6 +32,12 @@ Pour revenir en arrière, restaurer une sauvegarde cohérente avec la version du
 
 La migration `20261111000007_dossier_unique.sql` conserve la table société comme détail interne pour les jointures financières, avec une relation un-à-un. Si plusieurs dossiers étaient liés à une même société, elle sépare leurs identités internes sans modifier leurs identifiants, leurs rendez-vous, leurs documents ni leurs finances. Elle autorise la modification de l’identité via le dossier selon ses droits existants et désactive les anciennes opérations de fusion/rattachement. Déployer cette migration avant la nouvelle interface.
 
+### Règlements fournisseur
+
+Dans chaque dossier, les administrateurs actifs peuvent consigner plusieurs versements convenus avec le fournisseur. Une ligne peut se limiter à un libellé (par exemple « 50 % au démarrage »). Elle peut aussi préciser une date ou une année, un montant HT, un pourcentage et une note. La date de réception fait passer le règlement de « Prévu » à « Reçu ».
+
+Appliquer `20261111000009_reglements_fournisseur.sql` avant de déployer la section. Cet échéancier est indépendant du registre financier : ses lignes ne sont pas reprises dans les totaux ou tableaux de la page Finances.
+
 ## Vérification reproductible
 
 ```sh
