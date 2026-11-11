@@ -32,6 +32,12 @@ Pour revenir en arrière, restaurer une sauvegarde cohérente avec la version du
 
 La migration `20261111000007_dossier_unique.sql` conserve la table société comme détail interne pour les jointures financières, avec une relation un-à-un. Si plusieurs dossiers étaient liés à une même société, elle sépare leurs identités internes sans modifier leurs identifiants, leurs rendez-vous, leurs documents ni leurs finances. Elle autorise la modification de l’identité via le dossier selon ses droits existants et désactive les anciennes opérations de fusion/rattachement. Déployer cette migration avant la nouvelle interface.
 
+### Import de dossiers par énergie
+
+L’import nomme chaque dossier renseigné en énergie « Société (Élec) » ou « Société (Gaz) ». Deux lignes d’une même entreprise, y compris avec le même SIRET, ne sont pas des doublons si leurs énergies connues diffèrent. Les lignes de même énergie restent contrôlées, ainsi que les dossiers sans énergie renseignée. Les anciens noms sans suffixe sont toujours reconnus lors de la recherche de doublons ; les dossiers existants ne sont pas renommés.
+
+Appliquer `20261111000012_import_dossiers_energies.sql` avant de déployer le code d’import correspondant. Le contrôle en base et celui de l’aperçu utilisent alors la même règle. Le statut est « Signé » par défaut lorsque le statut Excel est absent, vide ou non reconnu ; les statuts CRM reconnus et les correspondances explicites sont conservés.
+
 ## Vérification reproductible
 
 ```sh

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { asUser, createTestDatabase, seedUser } from './helpers/database'
-import type { ImportResult } from '../shared/import-dossiers'
+import { parseImportRows, type ImportResult } from '../shared/import-dossiers'
 
 let db: Awaited<ReturnType<typeof createTestDatabase>>
 let admin: string
@@ -35,6 +35,13 @@ async function confirm(rows: object[], batch = randomUUID(), hash = fingerprint,
   return (await db.query<{ result: ImportResult }>(
     'select public.import_dossier_confirmer($1,$2,$3,$4::jsonb) as result', [actor, batch, hash, JSON.stringify(rows)],
   )).rows[0]!.result
+}
+
+async function candidates(lines: object[]) {
+  const { rows } = await asService(() => db.query<{ result: Record<string, { id: string }[]> }>(
+    'select public.import_dossier_societes($1,$2::jsonb) as result', [admin, JSON.stringify(lines)],
+  ))
+  return rows[0]!.result
 }
 
 describe('confirmation transactionnelle d’un import Excel', () => {
@@ -80,6 +87,48 @@ describe('confirmation transactionnelle d’un import Excel', () => {
     expect((await db.query('select raison_sociale,siret,statut from public.prospects where id=$1', [original.dossiers[0]!.id])).rows[0]).toEqual({
       raison_sociale: 'Société existante', siret: '11111111111111', statut: 'en_cours',
     })
+  })
+
+  it('crée un dossier par énergie pour une même entreprise et bloque sa réimportation à énergie identique', async () => {
+    const { rows } = parseImportRows([
+      ['Société', 'Commission HT', 'SIRET', 'Énergie'],
+      ['Atelier Énergie', 100, '78901234567890', 'Électricité'],
+      ['Atelier Énergie', 200, '78901234567890', 'Gaz'],
+    ], { raison_sociale: 0, commission_ht: 1, siret: 2, energie: 3 }, {}, [])
+    const payload = rows.map(({ line, dossier }) => ({ line, allow_duplicate: false, ...dossier }))
+    const result = await asService(() => confirm(payload))
+    expect(result.count).toBe(2)
+    const saved = await db.query<{ raison_sociale: string, energie: string, siret: string, societe_id: string }>(
+      'select raison_sociale, energie, siret, societe_id from public.prospects where id=any($1::uuid[]) order by energie',
+      [result.dossiers.map(entry => entry.id)],
+    )
+    expect(saved.rows).toMatchObject([
+      { raison_sociale: 'Atelier Énergie (Élec)', energie: 'electricite', siret: '78901234567890' },
+      { raison_sociale: 'Atelier Énergie (Gaz)', energie: 'gaz', siret: '78901234567890' },
+    ])
+    expect(saved.rows[0]?.societe_id).not.toBe(saved.rows[1]?.societe_id)
+    expect(await candidates(payload)).toMatchObject({
+      2: [{ id: saved.rows[0]?.societe_id }],
+      3: [{ id: saved.rows[1]?.societe_id }],
+    })
+    await expect(asService(() => confirm([row('Nom modifié (Gaz)', { siret: '78901234567890', energie: 'gaz' })])))
+      .rejects.toMatchObject({ code: '40001' })
+  })
+
+  it('écarte seulement une énergie différente dans le CRM, même pour les anciens noms sans suffixe', async () => {
+    await db.query(`insert into public.prospects (raison_sociale, energie, cree_par)
+      values ('Commerce historique', 'electricite', $1), ('Société sans énergie', null, $1)`, [admin])
+
+    const gas = row('Commerce historique (Gaz)', { energie: 'gaz' })
+    const elec = row('Commerce historique (Élec)', { line: 3, energie: 'electricite' })
+    const unknown = row('Société sans énergie (Gaz)', { line: 4, energie: 'gaz' })
+    const matches = await candidates([gas, elec, unknown])
+    expect(matches['2']).toHaveLength(0)
+    expect(matches['3']).toHaveLength(1)
+    expect(matches['4']).toHaveLength(1)
+    await expect(asService(() => confirm([elec]))).rejects.toMatchObject({ code: '40001' })
+    await expect(asService(() => confirm([unknown]))).rejects.toMatchObject({ code: '40001' })
+    await expect(asService(() => confirm([gas]))).resolves.toMatchObject({ count: 1 })
   })
 
   it('refuse les anciennes demandes de rattachement à une société ou à une ligne du fichier', async () => {
