@@ -8,6 +8,16 @@ const props = defineProps<{
   values: { mois: number, type: FinanceType, montant_cents: string | null }[]
 }>()
 const emit = defineEmits<{ select: [month: number, type: FinanceType] }>()
+const totals = computed(() => {
+  const visibleMonths = new Set(props.months.map(month => month.id))
+  return Object.fromEntries(props.series.map(series => {
+    const rows = props.values.filter(row => row.type === series.key && visibleMonths.has(row.mois))
+    const total = rows.some(row => row.montant_cents === null)
+      ? null
+      : rows.reduce((sum, row) => sum + BigInt(row.montant_cents!), 0n).toString()
+    return [series.key, total]
+  }))
+})
 function value(month: number, type: FinanceType): string | null {
   return props.values.find(v => v.mois === month && v.type === type)?.montant_cents ?? null
 }
@@ -21,8 +31,13 @@ function height(month: number, type: FinanceType) {
 <template>
   <figure class="card min-w-0">
     <figcaption class="mb-3 font-semibold">{{ title }}</figcaption>
-    <ul class="mb-4 flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-600">
-      <li v-for="s in series" :key="s.key" class="flex items-center gap-1"><span class="inline-block h-2 w-2 rounded" :style="{ background: s.color }" />{{ s.label }}</li>
+    <ul class="mb-5 grid grid-cols-2 gap-3" aria-live="polite">
+      <li v-for="s in series" :key="s.key" class="min-w-0">
+        <span class="flex items-center gap-1.5 text-xs text-gray-600">
+          <span class="inline-block h-2 w-2 shrink-0 rounded" :style="{ background: s.color }" />{{ s.label }}
+        </span>
+        <strong class="mt-1 block break-words text-lg tabular-nums">{{ financeEuros(totals[s.key] ?? null) }} <span class="text-xs font-normal text-gray-500">HT</span></strong>
+      </li>
     </ul>
     <div class="flex h-44 items-end gap-2 border-b border-gray-200" role="group" :aria-label="title">
       <div v-for="month in months" :key="month.id" class="flex h-full min-w-0 flex-1 items-end justify-center gap-px">
@@ -38,6 +53,6 @@ function height(month: number, type: FinanceType) {
       </div>
     </div>
     <div class="mt-2 flex gap-2 text-center text-[10px] text-gray-500"><span v-for="month in months" :key="month.id" class="min-w-0 flex-1 truncate">{{ month.label.slice(0, 3) }}</span></div>
-    <p class="mt-3 text-xs text-gray-500">Survolez une barre pour le montant HT ; cliquez pour afficher les dossiers correspondants.</p>
+    <p class="mt-3 text-xs text-gray-500">Totaux HT sur la période sélectionnée. Cliquez sur une barre pour afficher les dossiers correspondants.</p>
   </figure>
 </template>
