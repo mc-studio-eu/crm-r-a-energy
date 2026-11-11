@@ -162,6 +162,17 @@ function ouvrirPaiement(e: FinanceEcheance, paiement?: FinancePaiement) {
   )
 }
 
+async function marquerCommePaye(e: FinanceEcheance) {
+  const solde = e.montant_cents - totalPaye(e)
+  if (enCours.value || solde <= 0 || e.repartition_id || e.reglement_fournisseur_id) return
+  if (await enregistrer({
+    action: 'paiement', echeance_id: e.id, montant_cents: solde,
+    date_paiement: financeToday(), note: '',
+  }, 'Échéance marquée comme payée. Les finances sont à jour.')) {
+    if (edition.value?.type === 'paiement' && edition.value.echeance_id === e.id) edition.value = null
+  }
+}
+
 async function enregistrerMouvement() {
   const cible = edition.value
   if (!cible) return
@@ -364,6 +375,9 @@ function sens(e: FinanceEcheance) {
               {{ e.note }}
             </p>
             <div class="mt-3 flex flex-wrap gap-2">
+              <button v-if="!e.repartition_id && totalPaye(e) < e.montant_cents" type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e)">
+                Paiement partiel ou autre date
+              </button>
               <button v-if="e.repartition_id" type="button" class="btn-secondary" :disabled="enCours || totalPaye(e) >= e.montant_cents" @click="ouvrirPaiement(e)">
                 Ajouter un paiement
               </button>
@@ -395,13 +409,13 @@ function sens(e: FinanceEcheance) {
             </ul>
           </details>
           <div v-if="!e.reglement_fournisseur_id && !e.repartition_id" class="mt-3 flex flex-wrap items-center gap-3">
-            <button v-if="totalPaye(e) < e.montant_cents" type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e)">
-              {{ totalPaye(e) > 0 ? 'Enregistrer le solde reçu' : 'Indiquer un paiement fournisseur' }}
+            <button v-if="totalPaye(e) < e.montant_cents" type="button" class="btn-secondary" :disabled="enCours" @click="marquerCommePaye(e)">
+              Marquer comme payé
             </button>
             <span v-if="totalPaye(e) < e.montant_cents" class="text-sm text-gray-600">
-              Reste à recevoir : {{ financeEuros(e.montant_cents - totalPaye(e)) }} HT
+              {{ financeEuros(e.montant_cents - totalPaye(e)) }} HT · Paiement daté d’aujourd’hui
             </span>
-            <span v-else class="text-sm text-primary">Paiement fournisseur intégralement reçu.</span>
+            <span v-else class="text-sm text-primary">Échéance payée par le fournisseur.</span>
           </div>
         </div>
       </div>
