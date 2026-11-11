@@ -108,11 +108,12 @@ export default defineEventHandler(async (event) => {
   if (body.step === 'preview') {
     const { data: candidates, error: candidateError } = await admin.rpc('import_dossier_societes', {
       p_acteur: actor.id,
-      p_lignes: preview.rows.filter(row => row.dossier.raison_sociale && !row.dossier.raison_sociale.includes('\0'))
+      p_lignes: preview.rows.filter(row => !row.errors.length)
         .map(({ line, dossier }) => ({
           line,
           raison_sociale: dossier.raison_sociale,
-          siret: dossier.siret && /^\d{14}$/.test(dossier.siret) ? dossier.siret : null,
+          siret: dossier.siret,
+          energie: dossier.energie,
         })),
     })
     if (candidateError) throw createError({ statusCode: 500, message: 'Impossible de vérifier les doublons dans les dossiers.' })

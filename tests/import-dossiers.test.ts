@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import writeXlsxFile from 'write-excel-file/node'
 import { makeImportTemplate, readImportWorkbook } from '../server/utils/import-workbook'
 import {
-  inferImportMapping, parseImportCommission, parseImportDate, parseImportRows,
+  IMPORT_COLUMNS, inferImportMapping, parseImportCommission, parseImportDate, parseImportRows,
   type ImportMapping,
 } from '../shared/import-dossiers'
 
@@ -38,7 +38,7 @@ describe('import de dossiers Excel', () => {
     expect(() => parseImportDate('31/04/2026')).toThrow()
   })
 
-  it('conserve les numéros Excel et attend un choix pour un statut inconnu', async () => {
+  it('conserve les numéros Excel et applique Signé à un statut inconnu sans bloquer', async () => {
     const buffer = await writeXlsxFile([
       ['Société', 'Commission HT', 'Statut', 'SIRET', 'Date de signature'],
       ['Énergie SARL', null, 'Nouveau', '01234567890123'],
@@ -52,10 +52,56 @@ describe('import de dossiers Excel', () => {
     expect(first.rows[0]?.dossier).toMatchObject({ statut: 'en_cours', commission_cents: null, siret: '01234567890123' })
     expect(first.rows[0]?.duplicateInFile).toBe(true)
     expect(first.rows[1]?.duplicateInFile).toBe(true)
-    expect(first.rows[1]?.errors).toHaveLength(1)
-    const second = parseImportRows(sheets[0]!.data, columns, { accepte: 'signe' }, [])
-    expect(second.rows[1]?.dossier).toMatchObject({ statut: 'signe', commission_cents: 0, date_signature: '2026-11-11' })
+    expect(first.rows[1]?.errors).toEqual([])
+    expect(first.rows[1]?.dossier.statut).toBe('signe')
+    const second = parseImportRows(sheets[0]!.data, columns, { accepte: 'perdu' }, [])
+    expect(second.rows[1]?.dossier).toMatchObject({ statut: 'perdu', commission_cents: 0, date_signature: '2026-11-11' })
     expect(second.rows[1]?.errors).toEqual([])
+  })
+
+  it('importe les statuts vides, absents et Parcours finalisé comme Signé', () => {
+    expect(IMPORT_COLUMNS.statut.required).toBe(false)
+    for (const status of [null, '', 'Parcours finalisé']) {
+      const preview = parseImportRows([
+        ['Société', 'Commission HT', 'Statut'],
+        ['Épicerie', 384.98, status],
+      ], columns, {}, [])
+      expect(preview.rows[0]?.dossier.statut).toBe('signe')
+      expect(preview.rows[0]?.errors).toEqual([])
+    }
+    const preview = parseImportRows([
+      ['Société', 'Commission HT'], ['Boulangerie', 100],
+    ], { raison_sociale: 0, commission_ht: 1 }, {}, [])
+    expect(preview.rows[0]?.dossier.statut).toBe('signe')
+    expect(preview.rows[0]?.errors).toEqual([])
+  })
+
+  it('distingue deux énergies pour le même SIRET et normalise les suffixes saisis', () => {
+    const preview = parseImportRows([
+      ['Société', 'Commission HT', 'SIRET', 'Énergie'],
+      ['Épicerie', 100, '12345678901234', 'Élec'],
+      ['Épicerie ( GAZ )', 100, '12345678901234', 'Gaz'],
+    ], { raison_sociale: 0, commission_ht: 1, siret: 2, energie: 3 }, {}, [])
+
+    expect(preview.rows).toMatchObject([
+      { dossier: { raison_sociale: 'Épicerie (Élec)', energie: 'electricite' }, duplicateInFile: false, errors: [] },
+      { dossier: { raison_sociale: 'Épicerie (Gaz)', energie: 'gaz' }, duplicateInFile: false, errors: [] },
+    ])
+  })
+
+  it('signale encore les doublons de même énergie ou sans énergie et les noms trop longs après suffixe', () => {
+    const preview = parseImportRows([
+      ['Société', 'Commission HT', 'SIRET', 'Énergie'],
+      ['Épicerie (Électricité)', 100, '12345678901234', 'Électricité'],
+      ['Autre nom', 100, '12345678901234', 'Élec'],
+      ['epicerie', 100, null, null],
+      ['A'.repeat(255), 100, null, 'Gaz'],
+    ], { raison_sociale: 0, commission_ht: 1, siret: 2, energie: 3 }, {}, [])
+
+    expect(preview.rows.map(row => row.duplicateInFile)).toEqual([true, true, true, false])
+    expect(preview.rows[0]?.dossier.raison_sociale).toBe('Épicerie (Élec)')
+    expect(preview.rows[2]?.dossier.raison_sociale).toBe('epicerie')
+    expect(preview.rows[3]?.errors).toContain('La société dépasse 255 caractères avec le suffixe de l’énergie.')
   })
 
   it('rejette un fichier incompatible ou une feuille hors limites', async () => {
