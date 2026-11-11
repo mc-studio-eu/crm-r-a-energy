@@ -359,9 +359,6 @@ function sens(e: FinanceEcheance) {
               <strong>{{ e.note || 'Encaissement fournisseur' }}</strong>
               <span v-if="e.paiements[0]"> · {{ financeEuros(e.paiements[0].montant_cents) }} HT reçus le {{ financeDate(e.paiements[0].date_paiement) }}</span>
             </p>
-            <a href="#reglements-fournisseur-titre" class="font-medium text-primary hover:underline">
-              Voir les règlements fournisseur
-            </a>
           </div>
           <details v-else>
             <summary class="cursor-pointer text-sm">

@@ -12,7 +12,6 @@ const { profile, isStaff, isAdmin } = useProfile()
 const id = route.params.id as string
 const editing = ref(false)
 const showRdvForm = ref(false)
-const panneauFinances = ref<{ actualiser: () => Promise<void> }>()
 
 const { data: prospect, refresh } = await useAsyncData(`prospect-${id}`, async () => {
   const { data } = await supabase
@@ -222,12 +221,8 @@ function activiteLabel(a: Activite) {
       </div>
     </div>
 
-    <div v-if="isAdmin && profile?.actif" class="mt-6">
-      <DossierReglementsFournisseur :key="id" :prospect-id="id" @reglements-modifies="panneauFinances?.actualiser()" />
-    </div>
-
     <div v-if="isAdmin" class="mt-6">
-      <DossierFinances ref="panneauFinances" :prospect-id="id" />
+      <DossierFinances :prospect-id="id" />
     </div>
 
     <div class="mt-6 grid gap-6 lg:grid-cols-2">
