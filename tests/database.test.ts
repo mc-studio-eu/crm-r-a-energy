@@ -17,6 +17,22 @@ describe('Migrations et accès PostgreSQL', () => {
   }, 60000)
   afterAll(async () => { await db?.close() })
 
+  it('accepte une note sur 10 ou aucune note et refuse les valeurs hors barème', async () => {
+    for (const note of [0, 7.5, 10, null]) {
+      await asUser(db, admin, async () => {
+        const result = await db.query<{ scoring_entreprise: string | null }>(
+          'update prospects set scoring_entreprise=$2 where id=$1 returning scoring_entreprise', [dossier, note],
+        )
+        expect(result.rows[0]?.scoring_entreprise == null ? null : Number(result.rows[0]?.scoring_entreprise)).toBe(note)
+      })
+    }
+    for (const note of [-1, 10.1]) {
+      await expect(asUser(db, admin, () => db.query(
+        'update prospects set scoring_entreprise=$2 where id=$1', [dossier, note],
+      ))).rejects.toThrow(/prospects_scoring_entreprise_range/)
+    }
+  })
+
   it('refuse de modifier son rôle et son activation, autorise son nom', async () => {
     await expect(asUser(db, commercial, () => db.query("update profiles set role='admin' where id=$1", [commercial]))).rejects.toThrow(/permission denied/)
     await expect(asUser(db, commercial, () => db.query('update profiles set actif=false where id=$1', [commercial]))).rejects.toThrow(/permission denied/)

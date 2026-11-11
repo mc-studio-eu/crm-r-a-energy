@@ -95,6 +95,7 @@ export interface Prospect {
   lng: number | null
   statut: ProspectStatut
   source: string | null
+  scoring_entreprise: number | null
   teleprospecteur_id: string | null
   fournisseur: Fournisseur | null
   energie: Energie | null

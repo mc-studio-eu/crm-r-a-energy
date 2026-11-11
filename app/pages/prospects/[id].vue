@@ -184,6 +184,7 @@ function activiteLabel(a: Activite) {
         <p><span class="text-gray-500">Énergie :</span> {{ prospect.energie ? ENERGIES[prospect.energie] : '—' }}</p>
         <p><span class="text-gray-500">Fournisseur :</span> {{ prospect.fournisseur ? FOURNISSEURS[prospect.fournisseur] : '—' }}</p>
         <p><span class="text-gray-500">Source :</span> {{ prospect.source || '—' }}</p>
+        <p><span class="text-gray-500">Scoring entreprise :</span> {{ prospect.scoring_entreprise != null ? `${prospect.scoring_entreprise}/10` : '—' }}</p>
         <p><span class="text-gray-500">Date de signature :</span> {{ formatContractDate(prospect.date_signature) }}</p>
         <p><span class="text-gray-500">Début de livraison :</span> {{ formatContractDate(prospect.debut_livraison) }}</p>
         <p><span class="text-gray-500">Fin de livraison :</span> {{ formatContractDate(prospect.fin_livraison) }}</p>

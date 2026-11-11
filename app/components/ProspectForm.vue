@@ -27,6 +27,7 @@ const form = reactive({
   debut_livraison: props.prospect?.debut_livraison ?? '',
   fin_livraison: props.prospect?.fin_livraison ?? '',
   source: props.prospect?.source ?? '',
+  scoring_entreprise: props.prospect?.scoring_entreprise ?? '',
   notes: props.prospect?.notes ?? '',
   assigne_a: props.prospect?.assigne_a ?? '',
 })
@@ -173,6 +174,12 @@ async function save() {
     return
   }
 
+  const scoring = form.scoring_entreprise === '' ? null : Number(form.scoring_entreprise)
+  if (scoring !== null && (!Number.isFinite(scoring) || scoring < 0 || scoring > 10)) {
+    error.value = 'La note de scoring entreprise doit être comprise entre 0 et 10.'
+    return
+  }
+
   saving.value = true
   // Géocodage automatique de l'adresse (ticket 05)
   const adresseComplete = [form.adresse, form.code_postal, form.ville].filter(Boolean).join(', ')
@@ -208,6 +215,7 @@ async function save() {
     debut_livraison: form.debut_livraison || null,
     fin_livraison: form.fin_livraison || null,
     source: form.source.trim() || null,
+    scoring_entreprise: scoring,
     lat,
     lng,
   }
@@ -321,6 +329,10 @@ async function save() {
       <label class="block">
         <span class="label">Source du dossier</span>
         <input v-model="form.source" class="input">
+      </label>
+      <label class="block">
+        <span class="label">Scoring entreprise (note sur 10)</span>
+        <input v-model.number="form.scoring_entreprise" type="number" min="0" max="10" step="any" class="input" placeholder="Ex. : 8">
       </label>
       <label class="block">
         <span class="label">Date de signature</span>
