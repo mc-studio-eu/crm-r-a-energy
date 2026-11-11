@@ -2,7 +2,7 @@
 import { ASSIGNABLE_ROLES, PROSPECT_STATUTS, type Prospect, type ProspectStatut } from '~~/shared/types'
 
 const supabase = useSupabaseClient()
-const { isStaff, isAdmin, isRegie } = useProfile()
+const { isStaff, isAdmin, isAdministratif, isRegie } = useProfile()
 
 const PAGE_SIZE = 25
 const page = ref(1)
@@ -12,6 +12,7 @@ const filtreCommercial = ref('')
 const filtreVille = ref('')
 const tri = ref<'updated_at' | 'raison_sociale' | 'created_at'>('updated_at')
 const voirArchives = ref(false)
+watch(voirArchives, () => { page.value = 1 }, { flush: 'sync' })
 
 const { data: commerciaux } = await useAsyncData('commerciaux', async () => {
   const { data } = await supabase
@@ -84,7 +85,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
       <input v-model="filtreVille" type="search" placeholder="Ville ou CP" class="input">
     </div>
 
-    <label v-if="isAdmin" class="mb-4 flex w-fit cursor-pointer items-center gap-2 text-sm text-gray-600">
+    <label v-if="isAdmin || isAdministratif" class="mb-4 flex w-fit cursor-pointer items-center gap-2 text-sm text-gray-600">
       <input v-model="voirArchives" type="checkbox" class="accent-primary">
       Voir les dossiers archivés
     </label>

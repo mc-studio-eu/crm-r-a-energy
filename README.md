@@ -18,11 +18,14 @@ de trajet (calcul d'itinéraire).
 | Rôle | Accès |
 |---|---|
 | `admin` | Tout + gestion équipe + paramètres |
+| `administratif` | Tous les dossiers, y compris les archives : consultation, modification et ajout de documents ; aucun accès aux finances, paiements et échéanciers |
 | `telepro` | Dossiers créés par lui, prise de RDV, planning global ; aucune finance |
 | `commercial` | Ses prospects et ses RDV uniquement (RLS) |
 | `regie_interne` | Ses dossiers, ses RDV et ses commissions personnelles |
 | `regie_externe` | Ses dossiers et documents selon les droits historiques, ses commissions |
 | `apporteur_externe` | Portail en lecture seule : ses dossiers signés résumés et ses propres commissions |
+
+Appliquer les migrations `20261111000017_administratif_enum.sql` puis `20261111000018_administratif_dossiers.sql` avant de déployer le rôle Administratif.
 
 ## Setup local
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { ROLES } from '~~/shared/types'
+import { FINANCE_ROLES, ROLES } from '~~/shared/types'
 
-const { profile, load, isAdmin, isStaff } = useProfile()
+const { profile, load, isAdmin, isAdministratif, isStaff } = useProfile()
 const supabase = useSupabaseClient()
 const user = useSupabaseUser()
 const route = useRoute()
@@ -20,9 +20,9 @@ type NavItem = { to: string, label: string, show: boolean, icon: string }
 
 // icon = clé d'une icône SVG définie dans <NavIcon>
 const nav = computed<NavItem[]>(() => [
-  { to: '/', label: 'Tableau de bord', show: profile.value?.role !== 'apporteur_externe', icon: 'home' },
+  { to: '/', label: 'Tableau de bord', show: !isAdministratif.value && profile.value?.role !== 'apporteur_externe', icon: 'home' },
   { to: '/prospects', label: 'Dossiers', show: profile.value?.role !== 'apporteur_externe', icon: 'users' },
-  { to: '/finances', label: isAdmin.value ? 'Finances' : 'Mes commissions', show: !!profile.value && profile.value.role !== 'telepro', icon: 'home' },
+  { to: '/finances', label: isAdmin.value ? 'Finances' : 'Mes commissions', show: !!profile.value && FINANCE_ROLES.includes(profile.value.role), icon: 'home' },
   { to: '/rdv', label: 'Mes RDV', show: profile.value?.role === 'commercial' || profile.value?.role === 'regie_interne', icon: 'calendar' },
   { to: '/planning', label: 'Planning', show: isStaff.value, icon: 'calendar' },
   { to: '/carte', label: 'Carte des RDV', show: isStaff.value, icon: 'map' },

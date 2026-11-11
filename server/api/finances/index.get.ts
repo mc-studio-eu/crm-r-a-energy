@@ -1,8 +1,9 @@
 import type { FinanceTableau } from '~~/shared/finance'
+import { FINANCE_ROLES } from '~~/shared/types'
 
 export default defineEventHandler(async (event): Promise<FinanceTableau> => {
   setResponseHeader(event, 'Cache-Control', 'private, no-store')
-  const acteur = await requireRole(event, ['admin', 'commercial', 'regie_interne', 'regie_externe', 'apporteur_externe'])
+  const acteur = await requireRole(event, FINANCE_ROLES)
   const query = validerFinance(financeQuerySchema, getQuery(event))
   const admin = acteur.role === 'admin'
   const { data, error } = await supabaseAdmin().rpc('finance_tableau', {

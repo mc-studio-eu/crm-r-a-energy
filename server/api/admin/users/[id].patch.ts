@@ -1,7 +1,8 @@
 import { z } from 'zod'
+import { USER_ROLES } from '~~/shared/types'
 
 const bodySchema = z.strictObject({
-  role: z.enum(['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe', 'apporteur_externe']).optional(),
+  role: z.enum(USER_ROLES).optional(),
   actif: z.boolean().optional(),
   nom: z.string().trim().min(1).max(120).optional(),
 }).refine(body => Object.keys(body).length > 0)

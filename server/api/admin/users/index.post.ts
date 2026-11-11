@@ -1,9 +1,10 @@
 import { z } from 'zod'
+import { USER_ROLES } from '~~/shared/types'
 
 const bodySchema = z.object({
   email: z.string().email(),
   nom: z.string().trim().min(1).max(120),
-  role: z.enum(['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe', 'apporteur_externe']),
+  role: z.enum(USER_ROLES),
 })
 
 /** Création de compte salarié par l'admin uniquement — invitation par email (ticket 04). */

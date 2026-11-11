@@ -7,7 +7,7 @@ import {
 const route = useRoute()
 const supabase = useSupabaseClient()
 const userId = useUserId()
-const { profile, isStaff, isAdmin } = useProfile()
+const { profile, isStaff, isAdmin, isAdministratif } = useProfile()
 
 const id = route.params.id as string
 const editing = ref(false)
@@ -23,6 +23,7 @@ const { data: prospect, refresh } = await useAsyncData(`prospect-${id}`, async (
 })
 
 const { data: rdvs, refresh: refreshRdvs } = await useAsyncData(`rdvs-${id}`, async () => {
+  if (isAdministratif.value) return []
   const { data } = await supabase
     .from('rdv')
     .select('*, profiles!rdv_commercial_id_fkey(nom)')
@@ -83,8 +84,7 @@ async function ajouterCommentaire() {
 
 // Régie interne : toute fiche qu'elle peut ouvrir est la sienne (RLS), elle peut y placer ses RDV.
 const peutPrendreRdv = computed(() => isStaff.value || profile.value?.role === 'regie_interne')
-// Documents : admins + régie externe uniquement (règle client).
-const voitDocuments = computed(() => isAdmin.value || profile.value?.role === 'regie_externe')
+const voitDocuments = computed(() => isAdmin.value || isAdministratif.value || profile.value?.role === 'regie_externe')
 const modificationStatut = ref(false)
 const erreurStatut = ref('')
 
@@ -169,7 +169,7 @@ function activiteLabel(a: Activite) {
       <ProspectForm :prospect="prospect" @saved="editing = false; refresh()" />
     </div>
 
-    <div class="grid gap-6 lg:grid-cols-3">
+    <div class="grid gap-6" :class="{ 'lg:grid-cols-3': !isAdministratif }">
       <!-- Infos -->
       <div class="card space-y-3 text-sm lg:col-span-1">
         <h2 class="text-base">Coordonnées</h2>
@@ -191,7 +191,7 @@ function activiteLabel(a: Activite) {
       </div>
 
       <!-- RDV -->
-      <div class="card lg:col-span-2">
+      <div v-if="!isAdministratif" class="card lg:col-span-2">
         <div class="mb-3 flex items-center justify-between">
           <h2 class="text-base">Rendez-vous</h2>
           <button v-if="peutPrendreRdv" class="btn-primary !px-3 !py-1.5 text-xs" @click="showRdvForm = !showRdvForm">
