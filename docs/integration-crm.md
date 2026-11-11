@@ -50,9 +50,11 @@ Le formulaire dossier, les finances et l’import Excel utilisent ce catalogue. 
 
 ### Règlements fournisseur
 
-Dans chaque dossier, les administrateurs actifs peuvent consigner plusieurs versements convenus avec le fournisseur. Une ligne peut se limiter à un libellé (par exemple « 50 % au démarrage »). Elle peut aussi préciser une date ou une année, un montant HT, un pourcentage et une note. La date de réception fait passer le règlement de « Prévu » à « Reçu ».
+Dans chaque dossier, les administrateurs actifs peuvent consigner plusieurs versements convenus avec le fournisseur. Une ligne peut se limiter à un libellé, par exemple « 50 % au démarrage », ou préciser une date ou une année, un montant HT, un pourcentage et une note.
 
-Appliquer `20261111000009_reglements_fournisseur.sql` avant de déployer la section. Cet échéancier est indépendant du registre financier : ses lignes ne sont pas reprises dans les totaux ou tableaux de la page Finances.
+« Marquer comme reçu » demande la date et le montant HT encaissé, puis ajoute le versement aux encaissements reçus dans Finances. La commission du dossier doit être enregistrée et couvrir le montant reçu ainsi que les autres échéances fournisseur. Les corrections ou annulations de réception se font depuis le règlement fournisseur et se répercutent dans Finances.
+
+Appliquer `20261111000009_reglements_fournisseur.sql` et `20261111000015_reglements_fournisseur_finances.sql` avant le déploiement. Les réceptions déjà saisies avec une date seule restent à confirmer. Après confirmation du montant, elles apparaissent dans Finances à leur date de réception.
 
 ## Vérification reproductible
 

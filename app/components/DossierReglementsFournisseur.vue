@@ -1,22 +1,26 @@
 <script setup lang="ts">
-import { financeDate, financeDecimal, financeEuros, MAX_FINANCE_CENTS, parseFinanceDecimal } from '~~/shared/finance'
+import { financeDate, financeDecimal, financeEuros, financeToday, MAX_FINANCE_CENTS, parseFinanceDecimal } from '~~/shared/finance'
 import {
   MAX_ANNEE_REGLEMENT, MAX_LIBELLE_REGLEMENT, MAX_NOTE_REGLEMENT, MAX_TAUX_REGLEMENT_BPS,
   type ActionReglementFournisseur, type ReglementFournisseur,
 } from '~~/shared/reglements-fournisseur'
 
 const props = defineProps<{ prospectId: string }>()
+const emit = defineEmits<{ financesModifiees: [] }>()
 const url = computed(() => `/api/prospects/${props.prospectId}/reglements-fournisseur`)
 const { data: reglements, status, error: erreurLecture } = await useFetch<ReglementFournisseur[]>(url, {
   lazy: true, server: false,
 })
 
-const edition = ref<{ id?: string } | null>(null)
+type Edition = { type: 'planification', id?: string } | { type: 'reception', id: string, libelle: string }
+const edition = ref<Edition | null>(null)
 const champLibelle = ref<HTMLInputElement>()
+const champDateReception = ref<HTMLInputElement>()
 const champs = reactive({
   libelle: '', modeDate: '' as '' | 'date' | 'annee', datePrevue: '', anneePrevue: '' as number | '',
-  montant: '', taux: '', dateReception: '', note: '',
+  montant: '', taux: '', note: '',
 })
+const reception = reactive({ date: '', montant: '' })
 const enCours = ref(false)
 const erreur = ref('')
 const message = ref('')
@@ -29,19 +33,28 @@ function cleEcheance(reglement: ReglementFournisseur) {
 const echeancier = computed(() => [...(reglements.value ?? [])].sort((a, b) => cleEcheance(a).localeCompare(cleEcheance(b))))
 
 async function ouvrirFormulaire(reglement?: ReglementFournisseur) {
-  edition.value = { id: reglement?.id }
+  edition.value = { type: 'planification', id: reglement?.id }
   champs.libelle = reglement?.libelle ?? ''
   champs.modeDate = reglement?.date_prevue ? 'date' : reglement?.annee_prevue ? 'annee' : ''
   champs.datePrevue = reglement?.date_prevue ?? ''
   champs.anneePrevue = reglement?.annee_prevue ?? ''
   champs.montant = financeDecimal(reglement?.montant_cents ?? null)
   champs.taux = financeDecimal(reglement?.taux_bps ?? null)
-  champs.dateReception = reglement?.date_reception ?? ''
   champs.note = reglement?.note ?? ''
   erreur.value = ''
   message.value = ''
   await nextTick()
   champLibelle.value?.focus()
+}
+
+async function ouvrirReception(reglement: ReglementFournisseur) {
+  edition.value = { type: 'reception', id: reglement.id, libelle: reglement.libelle }
+  reception.date = reglement.date_reception ?? financeToday()
+  reception.montant = financeDecimal(reglement.montant_recu_cents ?? reglement.montant_cents)
+  erreur.value = ''
+  message.value = ''
+  await nextTick()
+  champDateReception.value?.focus()
 }
 
 function fermerFormulaire() {
@@ -54,19 +67,25 @@ async function modifierListe(action: ActionReglementFournisseur) {
   erreur.value = ''
   message.value = ''
   try {
+    const liste = reglements.value ?? []
+    const dejaComptabilise = liste.find(r => r.id === action.id)?.montant_recu_cents != null
     if (action.action === 'supprimer') {
       await $fetch(url.value, { method: 'POST', body: action })
-      reglements.value = (reglements.value ?? []).filter(r => r.id !== action.id)
+      reglements.value = liste.filter(r => r.id !== action.id)
       if (edition.value?.id === action.id) fermerFormulaire()
       message.value = 'Règlement supprimé.'
     }
     else {
       const reglement = await $fetch<ReglementFournisseur>(url.value, { method: 'POST', body: action })
-      const liste = reglements.value ?? []
       reglements.value = action.id ? liste.map(r => r.id === action.id ? reglement : r) : [...liste, reglement]
       fermerFormulaire()
-      message.value = 'Règlement enregistré.'
+      message.value = {
+        enregistrer: 'Règlement enregistré.',
+        recevoir: 'Réception enregistrée dans Finances.',
+        annuler_reception: 'Réception annulée.',
+      }[action.action]
     }
+    if (dejaComptabilise || action.action === 'recevoir') emit('financesModifiees')
   }
   catch (e) {
     erreur.value = errorMessage(e, 'L’opération sur le règlement a échoué.')
@@ -77,7 +96,7 @@ async function modifierListe(action: ActionReglementFournisseur) {
 }
 
 async function enregistrer() {
-  if (!edition.value || enCours.value) return
+  if (edition.value?.type !== 'planification' || enCours.value) return
   erreur.value = ''
   message.value = ''
   const libelle = champs.libelle.trim()
@@ -108,14 +127,41 @@ async function enregistrer() {
     annee_prevue: annee,
     montant_cents: montant,
     taux_bps: taux,
-    date_reception: champs.dateReception || null,
     note: champs.note.trim() || null,
   })
 }
 
+async function enregistrerReception() {
+  if (edition.value?.type !== 'reception' || enCours.value) return
+  const montant = parseFinanceDecimal(reception.montant, MAX_FINANCE_CENTS)
+  if (!montant) {
+    erreur.value = 'Saisissez le montant reçu, supérieur à zéro, avec deux décimales au maximum.'
+    return
+  }
+  await modifierListe({
+    action: 'recevoir', id: edition.value.id, date_reception: reception.date, montant_recu_cents: montant,
+  })
+}
+
+async function annulerReception(reglement: ReglementFournisseur) {
+  const confirmation = reglement.montant_recu_cents === null
+    ? 'Annuler la date de réception de ce règlement ?'
+    : 'Annuler cette réception et retirer l’encaissement de Finances ?'
+  if (enCours.value || !confirm(confirmation)) return
+  await modifierListe({ action: 'annuler_reception', id: reglement.id })
+}
+
 async function supprimer(reglement: ReglementFournisseur) {
-  if (enCours.value || !confirm(`Supprimer le règlement « ${reglement.libelle} » ?`)) return
+  const confirmation = reglement.montant_recu_cents === null
+    ? `Supprimer le règlement « ${reglement.libelle} » ?`
+    : `Supprimer le règlement « ${reglement.libelle} » et retirer l’encaissement de Finances ?`
+  if (enCours.value || !confirm(confirmation)) return
   await modifierListe({ action: 'supprimer', id: reglement.id })
+}
+
+function statut(reglement: ReglementFournisseur) {
+  if (reglement.montant_recu_cents !== null) return 'Reçu'
+  return reglement.date_reception ? 'Réception à confirmer' : 'Prévu'
 }
 </script>
 
@@ -127,7 +173,7 @@ async function supprimer(reglement: ReglementFournisseur) {
           Règlements fournisseur
         </h2>
         <p class="mt-1 text-sm text-gray-600">
-          Suivez les versements convenus avec le fournisseur. Ce suivi est séparé du registre financier et ne met pas à jour les totaux de la page Finances.
+          Confirmez une réception pour enregistrer le montant reçu dans Finances.
         </p>
       </div>
       <button v-if="status === 'success' && !edition" type="button" class="btn-primary" :disabled="enCours" @click="ouvrirFormulaire()">
@@ -142,7 +188,7 @@ async function supprimer(reglement: ReglementFournisseur) {
       Chargement des règlements…
     </p>
     <template v-else>
-      <form v-if="edition" class="rounded-lg border border-gray-200 bg-gray-50 p-4" @submit.prevent="enregistrer">
+      <form v-if="edition?.type === 'planification'" class="rounded-lg border border-gray-200 bg-gray-50 p-4" @submit.prevent="enregistrer">
         <fieldset :disabled="enCours" class="space-y-3">
           <legend class="mb-2 text-sm font-semibold">
             {{ edition.id ? 'Modifier le règlement' : 'Nouveau règlement' }}
@@ -171,7 +217,7 @@ async function supprimer(reglement: ReglementFournisseur) {
           </div>
           <div class="grid gap-3 sm:grid-cols-2">
             <label>
-              <span class="label">Montant (€ HT, facultatif)</span>
+              <span class="label">Montant prévu (€ HT, facultatif)</span>
               <input v-model="champs.montant" inputmode="decimal" class="input" placeholder="Ex. 1250,00">
             </label>
             <label>
@@ -179,11 +225,6 @@ async function supprimer(reglement: ReglementFournisseur) {
               <input v-model="champs.taux" inputmode="decimal" class="input" placeholder="Ex. 50">
             </label>
           </div>
-          <label class="block sm:max-w-xs">
-            <span class="label">Date de réception (facultative)</span>
-            <input v-model="champs.dateReception" type="date" class="input" min="0001-01-01" max="9999-12-31">
-            <span class="mt-1 block text-xs text-gray-600">Renseignez cette date pour marquer le règlement comme reçu.</span>
-          </label>
           <label class="block">
             <span class="label">Note (facultative)</span>
             <textarea v-model="champs.note" class="input" rows="2" :maxlength="MAX_NOTE_REGLEMENT" />
@@ -191,6 +232,32 @@ async function supprimer(reglement: ReglementFournisseur) {
           <div class="flex flex-wrap gap-2">
             <button type="submit" class="btn-primary">
               {{ enCours ? 'Enregistrement…' : 'Enregistrer le règlement' }}
+            </button>
+            <button type="button" class="btn-secondary" @click="fermerFormulaire">
+              Annuler
+            </button>
+          </div>
+        </fieldset>
+      </form>
+
+      <form v-else-if="edition?.type === 'reception'" class="rounded-lg border border-gray-200 bg-gray-50 p-4" @submit.prevent="enregistrerReception">
+        <fieldset :disabled="enCours" class="space-y-3">
+          <legend class="mb-2 text-sm font-semibold">
+            Réception · {{ edition.libelle }}
+          </legend>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <label>
+              <span class="label">Date de réception</span>
+              <input ref="champDateReception" v-model="reception.date" type="date" class="input" min="0001-01-01" :max="financeToday()" required>
+            </label>
+            <label>
+              <span class="label">Montant reçu (€ HT)</span>
+              <input v-model="reception.montant" class="input" inputmode="decimal" required>
+            </label>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <button type="submit" class="btn-primary">
+              {{ enCours ? 'Enregistrement…' : 'Enregistrer la réception' }}
             </button>
             <button type="button" class="btn-secondary" @click="fermerFormulaire">
               Annuler
@@ -209,22 +276,35 @@ async function supprimer(reglement: ReglementFournisseur) {
               <p class="min-w-0 font-semibold break-words">{{ r.libelle }}</p>
               <span
                 class="rounded-full px-2 py-0.5 text-xs font-medium"
-                :class="r.date_reception ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'"
+                :class="r.montant_recu_cents !== null ? 'bg-green-50 text-green-800' : 'bg-amber-50 text-amber-800'"
               >
-                {{ r.date_reception ? 'Reçu' : 'Prévu' }}
+                {{ statut(r) }}
               </span>
             </div>
             <p class="mt-1 text-xs text-gray-600">
               {{ r.date_prevue ? `Prévu le ${financeDate(r.date_prevue)}` : r.annee_prevue ? `Prévu en ${r.annee_prevue}` : 'Échéance non précisée' }}
               <span v-if="r.montant_cents !== null"> · {{ financeEuros(r.montant_cents) }} HT</span>
               <span v-if="r.taux_bps !== null"> · {{ pourcentage.format(r.taux_bps / 10_000) }}</span>
-              <span v-if="r.date_reception"> · Reçu le {{ financeDate(r.date_reception) }}</span>
+            </p>
+            <p v-if="r.date_reception" class="mt-1 text-xs text-gray-600">
+              {{ r.montant_recu_cents === null
+                ? `Date de réception saisie : ${financeDate(r.date_reception)}`
+                : `${financeEuros(r.montant_recu_cents)} HT reçus le ${financeDate(r.date_reception)}` }}
             </p>
             <p v-if="r.note" class="mt-2 whitespace-pre-wrap break-words text-gray-600">{{ r.note }}</p>
           </div>
           <div class="flex flex-wrap gap-2">
+            <button type="button" class="btn-secondary !px-3 !py-1.5 text-xs" :disabled="enCours" @click="ouvrirReception(r)">
+              {{ r.montant_recu_cents !== null ? 'Corriger la réception' : 'Marquer comme reçu' }}
+            </button>
             <button type="button" class="btn-secondary !px-3 !py-1.5 text-xs" :disabled="enCours" @click="ouvrirFormulaire(r)">
               Modifier
+            </button>
+            <button
+              v-if="r.date_reception" type="button" class="btn-secondary !px-3 !py-1.5 text-xs"
+              :disabled="enCours" @click="annulerReception(r)"
+            >
+              Annuler la réception
             </button>
             <button type="button" class="btn-secondary !px-3 !py-1.5 text-xs" :disabled="enCours" @click="supprimer(r)">
               Supprimer

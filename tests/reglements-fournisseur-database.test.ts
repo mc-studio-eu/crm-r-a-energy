@@ -34,6 +34,10 @@ describe('Échéancier fournisseur PostgreSQL', () => {
     )).rows[0]!.id
   }
 
+  function rpc(prospectId: string, action: string, payload: Record<string, unknown>) {
+    return db.query('select modifier_reglement_fournisseur($1,$2,$3,$4)', [admin, prospectId, action, payload])
+  }
+
   it('autorise une ligne avec le seul libellé et accepte chaque mode de prévision séparément', async () => {
     const labelOnly = await creer('À réception')
     const byDate = await creer('Versement daté', { date_prevue: '2027-03-15' })
@@ -81,14 +85,12 @@ describe('Échéancier fournisseur PostgreSQL', () => {
       ))
       expect(visible.rows, `ligne visible avec le rôle de ${actor}`).toEqual([])
 
-      const updated = await asUser(db, actor, () => db.query(
-        "update public.prospect_reglements_fournisseur set libelle='Modification non autorisée' where id=$1 returning id", [id],
-      ))
-      expect(updated.rows).toEqual([])
-      const deleted = await asUser(db, actor, () => db.query(
-        'delete from public.prospect_reglements_fournisseur where id=$1 returning id', [id],
-      ))
-      expect(deleted.rows).toEqual([])
+      await expect(asUser(db, actor, () => db.query(
+        "update public.prospect_reglements_fournisseur set libelle='Modification non autorisée' where id=$1", [id],
+      ))).rejects.toThrow()
+      await expect(asUser(db, actor, () => db.query(
+        'delete from public.prospect_reglements_fournisseur where id=$1', [id],
+      ))).rejects.toThrow()
       await expect(asUser(db, actor, () => creer('Création non autorisée'))).rejects.toThrow()
     }
 
@@ -100,14 +102,22 @@ describe('Échéancier fournisseur PostgreSQL', () => {
       await expect(asUser(db, actor, () => creer('Compte inactif'))).rejects.toThrow()
     }
 
-    const updated = await asUser(db, admin, () => db.query<{ libelle: string }>(
-      "update public.prospect_reglements_fournisseur set libelle='Échéance corrigée' where id=$1 returning libelle", [id],
+    const visibleAdmin = await asUser(db, admin, () => db.query(
+      'select id from public.prospect_reglements_fournisseur where id=$1', [id],
     ))
-    expect(updated.rows[0]?.libelle).toBe('Échéance corrigée')
-    const deleted = await asUser(db, admin, () => db.query(
-      'delete from public.prospect_reglements_fournisseur where id=$1 returning id', [id],
-    ))
-    expect(deleted.rows).toHaveLength(1)
+    expect(visibleAdmin.rows).toHaveLength(1)
+    await expect(asUser(db, admin, () => db.query(
+      "update public.prospect_reglements_fournisseur set libelle='Écriture directe refusée' where id=$1", [id],
+    ))).rejects.toThrow()
+    await rpc(prospectId, 'enregistrer', {
+      id, libelle: 'Échéance corrigée', date_prevue: null, annee_prevue: null,
+      montant_cents: null, taux_bps: null, note: null,
+    })
+    expect((await db.query<{ libelle: string }>(
+      'select libelle from public.prospect_reglements_fournisseur where id=$1', [id],
+    )).rows[0]?.libelle).toBe('Échéance corrigée')
+    await rpc(prospectId, 'supprimer', { id })
+    expect((await db.query('select id from public.prospect_reglements_fournisseur where id=$1', [id])).rows).toEqual([])
   })
 
   it('refuse les dates incohérentes, les champs hors limites et les libellés invalides', async () => {
@@ -141,5 +151,9 @@ describe('Échéancier fournisseur PostgreSQL', () => {
     await expect(asUser(db, admin, () => db.query(
       'update public.prospect_reglements_fournisseur set prospect_id=$2 where id=$1', [id, anotherProspect],
     ))).rejects.toThrow()
+    await expect(rpc(anotherProspect, 'enregistrer', {
+      id, libelle: 'Tentative de déplacement', date_prevue: null, annee_prevue: null,
+      montant_cents: null, taux_bps: null, note: null,
+    })).rejects.toThrow(/introuvable/i)
   })
 })

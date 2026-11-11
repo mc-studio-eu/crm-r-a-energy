@@ -5,6 +5,7 @@ import {
 } from '~~/shared/finance'
 
 const props = defineProps<{ prospectId: string }>()
+defineExpose({ actualiser: () => refresh() })
 const url = computed(() => `/api/finances/${props.prospectId}`)
 const { data: dossier, status, error: lectureErreur, refresh } = await useFetch<FinanceDossier>(url, { lazy: true, server: false })
 const { data: annuaire, error: annuaireErreur } = await useFetch<FinanceAnnuaire>('/api/beneficiaires', { lazy: true, server: false })
@@ -342,7 +343,16 @@ function sens(e: FinanceEcheance) {
           Aucune échéance enregistrée.
         </p>
         <div v-for="e in echeances" :key="e.id" class="rounded-lg border border-gray-200 p-3">
-          <details>
+          <div v-if="e.reglement_fournisseur_id" class="flex flex-wrap items-center justify-between gap-2 text-sm">
+            <p>
+              <strong>{{ e.note || 'Encaissement fournisseur' }}</strong>
+              <span v-if="e.paiements[0]"> · {{ financeEuros(e.paiements[0].montant_cents) }} HT reçus le {{ financeDate(e.paiements[0].date_paiement) }}</span>
+            </p>
+            <a href="#reglements-fournisseur-titre" class="font-medium text-primary hover:underline">
+              Voir les règlements fournisseur
+            </a>
+          </div>
+          <details v-else>
             <summary class="cursor-pointer text-sm">
               <strong>{{ sens(e) }}</strong> · {{ financeDate(e.date_prevue) }} · {{ financeEuros(e.montant_cents) }}
               <span class="ml-1 text-gray-600">({{ financeEuros(totalPaye(e)) }} {{ e.repartition_id ? 'versés' : 'reçus' }})</span>
@@ -384,7 +394,7 @@ function sens(e: FinanceEcheance) {
               </li>
             </ul>
           </details>
-          <div v-if="!e.repartition_id" class="mt-3 flex flex-wrap items-center gap-3">
+          <div v-if="!e.reglement_fournisseur_id && !e.repartition_id" class="mt-3 flex flex-wrap items-center gap-3">
             <button v-if="totalPaye(e) < e.montant_cents" type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e)">
               {{ totalPaye(e) > 0 ? 'Enregistrer le solde reçu' : 'Indiquer un paiement fournisseur' }}
             </button>

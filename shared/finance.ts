@@ -41,7 +41,8 @@ export interface FinancePaiement {
 export interface FinanceEcheance {
   id: string
   repartition_id: string | null
-  date_prevue: string
+  reglement_fournisseur_id: string | null
+  date_prevue: string | null
   montant_cents: number
   note: string | null
   paiements: FinancePaiement[]
