@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  ENERGIES, FOURNISSEURS, PROSPECT_HISTORICAL_STATUTS, PROSPECT_STATUTS, RDV_STATUTS,
+  ENERGIES, PROSPECT_HISTORICAL_STATUTS, PROSPECT_STATUTS, RDV_STATUTS,
   type Prospect, type ProspectHistoriqueStatut, type ProspectStatut, type Rdv,
 } from '~~/shared/types'
 
@@ -16,10 +16,10 @@ const showRdvForm = ref(false)
 const { data: prospect, refresh } = await useAsyncData(`prospect-${id}`, async () => {
   const { data } = await supabase
     .from('prospects')
-    .select('*, teleprospecteur:profiles!prospects_teleprospecteur_id_fkey(nom)')
+    .select('*, teleprospecteur:profiles!prospects_teleprospecteur_id_fkey(nom), fournisseur_info:fournisseurs!prospects_fournisseur_fkey(nom)')
     .eq('id', id)
     .single()
-  return data as (Prospect & { teleprospecteur: { nom: string } | null }) | null
+  return data as (Prospect & { teleprospecteur: { nom: string } | null, fournisseur_info: { nom: string } | null }) | null
 })
 
 const { data: rdvs, refresh: refreshRdvs } = await useAsyncData(`rdvs-${id}`, async () => {
@@ -182,7 +182,7 @@ function activiteLabel(a: Activite) {
         <p v-if="prospect.notes" class="whitespace-pre-wrap rounded bg-gray-50 p-2">{{ prospect.notes }}</p>
         <h2 class="border-t border-gray-100 pt-3 text-base">Contrat</h2>
         <p><span class="text-gray-500">Énergie :</span> {{ prospect.energie ? ENERGIES[prospect.energie] : '—' }}</p>
-        <p><span class="text-gray-500">Fournisseur :</span> {{ prospect.fournisseur ? FOURNISSEURS[prospect.fournisseur] : '—' }}</p>
+        <p><span class="text-gray-500">Fournisseur :</span> {{ prospect.fournisseur_info?.nom ?? prospect.fournisseur ?? '—' }}</p>
         <p><span class="text-gray-500">Source :</span> {{ prospect.source || '—' }}</p>
         <p><span class="text-gray-500">Scoring entreprise :</span> {{ prospect.scoring_entreprise != null ? `${prospect.scoring_entreprise}/10` : '—' }}</p>
         <p><span class="text-gray-500">Date de signature :</span> {{ formatContractDate(prospect.date_signature) }}</p>

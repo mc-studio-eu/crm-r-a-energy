@@ -22,7 +22,9 @@ const { data: commerciaux } = await useAsyncData('rdv-commerciaux', async () => 
 })
 
 const form = reactive({
-  commercial_id: isRegieInterne.value ? (userId.value ?? '') : (props.prospect.assigne_a ?? ''),
+  commercial_id: isRegieInterne.value
+    ? (userId.value ?? '')
+    : (commerciaux.value?.find(c => c.id === props.prospect.assigne_a)?.id ?? ''),
   date: '',
   heure: '10:00',
   duree: 60,

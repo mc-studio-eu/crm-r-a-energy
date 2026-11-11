@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
-import { ASSIGNABLE_ROLES } from '../../../shared/types'
+import { ASSIGNABLE_ROLES, type Fournisseur } from '../../../shared/types'
 import {
   IMPORT_COLUMNS, IMPORT_COLUMN_KEYS, IMPORT_MAX_BYTES, IMPORT_MAX_COLUMNS, IMPORT_MAX_MB, IMPORT_MAX_ROWS,
   importCellText, isBlankImportRow, parseImportRows,
@@ -26,7 +26,9 @@ const request = z.discriminatedUnion('step', [
     step: z.literal('confirm'),
     ...details,
     batch: z.uuid(),
-    selection: z.array(z.strictObject({ line, allowDuplicate: z.boolean() })).min(1).max(IMPORT_MAX_ROWS),
+    selection: z.array(z.strictObject({
+      line, allowDuplicate: z.boolean(), fournisseur: z.string().min(1).max(50).nullable().optional(),
+    })).min(1).max(IMPORT_MAX_ROWS),
   }),
 ])
 
@@ -101,18 +103,22 @@ export default defineEventHandler(async (event) => {
     || IMPORT_COLUMN_KEYS.some(key => IMPORT_COLUMNS[key].required && body.mapping[key] === undefined)) {
     throw createError({ statusCode: 422, message: 'Associez chaque champ obligatoire à une colonne distincte.' })
   }
-  const { data: profiles, error: profileError } = await admin.from('profiles').select('id, nom, role')
-    .eq('actif', true).in('role', [...ASSIGNABLE_ROLES, 'telepro'])
+  const [{ data: profiles, error: profileError }, { data: fournisseurs, error: fournisseurError }] = await Promise.all([
+    admin.from('profiles').select('id, nom, role').eq('actif', true).in('role', [...ASSIGNABLE_ROLES, 'telepro']),
+    admin.from('fournisseurs').select('code, nom, actif'),
+  ])
   if (profileError) throw createError({ statusCode: 500, message: 'Impossible de vérifier les intervenants.' })
-  const preview: ImportPreview = parseImportRows(sheet.data, body.mapping, body.statuses, profiles as ImportProfile[], epoch1904)
+  if (fournisseurError) throw createError({ statusCode: 500, message: 'Impossible de vérifier les fournisseurs.' })
+  const preview: ImportPreview = parseImportRows(sheet.data, body.mapping, body.statuses, profiles as ImportProfile[], epoch1904, fournisseurs as Fournisseur[])
   if (body.step === 'preview') {
     const { data: candidates, error: candidateError } = await admin.rpc('import_dossier_societes', {
       p_acteur: actor.id,
-      p_lignes: preview.rows.filter(row => row.dossier.raison_sociale && !row.dossier.raison_sociale.includes('\0'))
+      p_lignes: preview.rows.filter(row => !row.errors.length)
         .map(({ line, dossier }) => ({
           line,
           raison_sociale: dossier.raison_sociale,
-          siret: dossier.siret && /^\d{14}$/.test(dossier.siret) ? dossier.siret : null,
+          siret: dossier.siret,
+          energie: dossier.energie,
         })),
     })
     if (candidateError) throw createError({ statusCode: 500, message: 'Impossible de vérifier les doublons dans les dossiers.' })
@@ -121,12 +127,15 @@ export default defineEventHandler(async (event) => {
     return preview
   }
 
-  const selected = new Map(body.selection.map(row => [row.line, row.allowDuplicate]))
+  const selected = new Map(body.selection.map(row => [row.line, row]))
   if (selected.size !== body.selection.length) throw conflict('Une ligne apparaît plusieurs fois dans la sélection.')
   const previewRows = new Map(preview.rows.map(row => [row.line, row]))
-  const payload = Array.from(selected, ([line, allowDuplicate]) => {
+  const payload = Array.from(selected, ([line, { allowDuplicate, fournisseur }]) => {
     const row = previewRows.get(line)
-    if (!row || row.errors.length) throw conflict(`Vérifiez la ligne ${line} avant l’import.`)
+    if (!row || row.errors.length) throw conflict(`Actualisez l’aperçu et vérifiez la ligne ${line} avant l’import.`)
+    if (fournisseur !== undefined && fournisseur !== row.dossier.fournisseur) {
+      throw conflict(`Le fournisseur de la ligne ${line} a changé. Actualisez l’aperçu.`)
+    }
     // Les correspondances en base sont contrôlées dans la transaction, après la vérification du reçu.
     // Une confirmation concurrente du même lot peut ainsi retrouver le résultat déjà enregistré.
     if (row.duplicateInFile && !allowDuplicate) {
@@ -142,6 +151,9 @@ export default defineEventHandler(async (event) => {
   })
   if (error?.code === '42501') throw createError({ statusCode: 403, message: 'L’import est réservé aux administrateurs actifs.' })
   if (error?.code === '40001') throw conflict(error.message)
+  if (error?.code === '23514' && error.message === 'Le fournisseur sélectionné est indisponible.') {
+    throw conflict('Un fournisseur est devenu indisponible. Actualisez l’aperçu.')
+  }
   if (error) throw createError({ statusCode: 500, message: 'L’import a échoué. Vous pouvez réessayer la même sélection.' })
   return data as ImportResult
 })

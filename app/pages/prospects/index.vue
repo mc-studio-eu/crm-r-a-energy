@@ -26,7 +26,7 @@ const { data: commerciaux } = await useAsyncData('commerciaux', async () => {
 const { data, refresh } = await useAsyncData('prospects', async () => {
   let query = supabase
     .from('prospects')
-    .select('*', { count: 'exact' })
+    .select('*, assigne:profiles!prospects_assigne_a_fkey(nom)', { count: 'exact' })
     .eq('archive', voirArchives.value)
 
   if (search.value) {
@@ -43,7 +43,7 @@ const { data, refresh } = await useAsyncData('prospects', async () => {
     .order(tri.value, { ascending: tri.value === 'raison_sociale' })
     .range(from, from + PAGE_SIZE - 1)
 
-  return { rows: (rows ?? []) as Prospect[], count: count ?? 0 }
+  return { rows: (rows ?? []) as (Prospect & { assigne: { nom: string } | null })[], count: count ?? 0 }
 }, { watch: [page, filtreStatut, filtreCommercial, tri, voirArchives] })
 
 watchDebounced([search, filtreVille], () => {
@@ -52,9 +52,6 @@ watchDebounced([search, filtreVille], () => {
 }, { debounce: 300 })
 
 const totalPages = computed(() => Math.max(1, Math.ceil((data.value?.count ?? 0) / PAGE_SIZE)))
-
-const nomCommercial = (id: string | null) =>
-  displayName(commerciaux.value?.find(c => c.id === id)?.nom)
 
 /** Changement de statut en 1 clic depuis la liste (historisé par trigger BDD). */
 async function setStatut(prospect: Prospect, statut: ProspectStatut) {
@@ -109,7 +106,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
         </p>
         <p class="mt-1 text-xs text-gray-500">
           <span v-if="p.ville">{{ p.ville }} {{ p.code_postal }}</span>
-          <span v-if="p.assigne_a" class="text-gray-400"> · {{ nomCommercial(p.assigne_a) }}</span>
+          <span v-if="p.assigne_a" class="text-gray-400"> · {{ displayName(p.assigne?.nom) }}</span>
         </p>
       </NuxtLink>
       <p v-if="!data?.rows.length" class="card py-10 text-center text-gray-400">
@@ -146,7 +143,7 @@ async function setStatut(prospect: Prospect, statut: ProspectStatut) {
             <td>{{ p.ville }} <span class="text-xs text-gray-400">{{ p.code_postal }}</span></td>
             <td><StatusBadge :statut="p.statut" /></td>
             <td class="whitespace-nowrap">{{ p.scoring_entreprise != null ? `${p.scoring_entreprise}/10` : '—' }}</td>
-            <td>{{ nomCommercial(p.assigne_a) }}</td>
+            <td>{{ displayName(p.assigne?.nom) }}</td>
             <td>
               <select
                 class="rounded border border-gray-200 px-1 py-0.5 text-xs"

@@ -31,6 +31,9 @@ defineProps<{ name: string }>()
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
     </template>
+    <template v-else-if="name === 'list'">
+      <path d="M9 6h12M9 12h12M9 18h12M3 6h.01M3 12h.01M3 18h.01" />
+    </template>
     <!-- cog / paramètres -->
     <template v-else-if="name === 'cog'">
       <circle cx="12" cy="12" r="3" />

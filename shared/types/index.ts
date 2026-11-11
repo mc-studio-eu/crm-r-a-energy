@@ -26,13 +26,10 @@ export const PROSPECT_STATUT_COLORS: Record<ProspectStatut, string> = {
   perdu: '#9CA3AF',
 }
 
-export type Fournisseur = 'gazelle_energy' | 'mint' | 'ohm' | 'jeety'
-
-export const FOURNISSEURS: Record<Fournisseur, string> = {
-  gazelle_energy: 'Gazelle Energy',
-  mint: 'Mint',
-  ohm: 'Ohm',
-  jeety: 'Jeety',
+export interface Fournisseur {
+  code: string
+  nom: string
+  actif: boolean
 }
 
 export type Energie = 'gaz' | 'electricite'
@@ -97,7 +94,7 @@ export interface Prospect {
   source: string | null
   scoring_entreprise: number | null
   teleprospecteur_id: string | null
-  fournisseur: Fournisseur | null
+  fournisseur: string | null
   energie: Energie | null
   date_signature: string | null
   debut_livraison: string | null

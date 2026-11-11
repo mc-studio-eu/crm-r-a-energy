@@ -1,4 +1,4 @@
-import { ASSIGNABLE_ROLES, FOURNISSEURS, type Fournisseur, type ProspectStatut, type UserRole } from './types'
+import { ASSIGNABLE_ROLES, type Fournisseur, type ProspectStatut, type UserRole } from './types'
 
 export const IMPORT_MAX_MB = 2
 export const IMPORT_MAX_BYTES = IMPORT_MAX_MB * 1024 * 1024
@@ -8,7 +8,7 @@ export const IMPORT_MAX_COLUMNS = 64
 export const IMPORT_COLUMNS = {
   raison_sociale: { label: 'Société', required: true, aliases: ['raison sociale', 'entreprise', 'nom société', 'client'] },
   commission_ht: { label: 'Commission HT', required: true, aliases: ['commission € ht', 'commission', 'commission ht €', 'montant ht'] },
-  statut: { label: 'Statut', required: true, aliases: ['état', 'statut dossier'] },
+  statut: { label: 'Statut', required: false, aliases: ['état', 'statut dossier'] },
   siret: { label: 'SIRET', required: false, aliases: ['n° siret', 'numéro siret'] },
   fournisseur: { label: 'Fournisseur', required: false, aliases: ['fournisseur énergie'] },
   energie: { label: 'Énergie', required: false, aliases: ['type énergie'] },
@@ -25,7 +25,7 @@ export type ImportMapping = Partial<Record<ImportColumn, number>>
 export type ImportStatusMapping = Record<string, ProspectStatut>
 export type ImportCell = string | number | Date | boolean | null
 export type ImportProfile = { id: string, nom: string, role: UserRole }
-export type ImportSelection = { line: number, allowDuplicate: boolean }
+export type ImportSelection = { line: number, allowDuplicate: boolean, fournisseur: string | null }
 
 export interface ImportSheet {
   name: string
@@ -38,7 +38,7 @@ export interface ImportDossier {
   siret: string | null
   commission_cents: number | null
   statut: ProspectStatut | null
-  fournisseur: Fournisseur | null
+  fournisseur: string | null
   energie: 'gaz' | 'electricite' | null
   date_signature: string | null
   debut_livraison: string | null
@@ -60,6 +60,7 @@ export interface ImportPreview {
   rows: ImportRow[]
   unknownStatuses: { key: string, label: string }[]
   profiles: ImportProfile[]
+  fournisseurs: Fournisseur[]
 }
 
 export interface ImportResult {
@@ -154,14 +155,24 @@ const STATUS_ALIASES = new Map<string, ProspectStatut>([
   ['rdv place', 'rdv_place'], ['rendez vous place', 'rdv_place'], ['rendez-vous place', 'rdv_place'],
   ['signe', 'signe'], ['perdu', 'perdu'],
 ])
-const PROVIDERS = new Map<string, Fournisseur>(Object.entries(FOURNISSEURS).flatMap(([id, label]) => [
-  [normalizeImportText(id), id as Fournisseur], [normalizeImportText(label), id as Fournisseur],
-]))
-const ENERGIES = new Map<string, ImportDossier['energie']>([['gaz', 'gaz'], ['electricite', 'electricite']])
+const ENERGIES = new Map<string, NonNullable<ImportDossier['energie']>>([
+  ['gaz', 'gaz'], ['electricite', 'electricite'], ['elec', 'electricite'],
+])
 
-export function companyMatchesImport(a: Pick<ImportDossier, 'raison_sociale' | 'siret'>, b: Pick<ImportDossier, 'raison_sociale' | 'siret'>) {
-  const aName = normalizeImportText(a.raison_sociale)
-  return (a.siret !== null && a.siret === b.siret) || (aName !== '' && aName === normalizeImportText(b.raison_sociale))
+function companyNameWithoutEnergy(name: string) {
+  const suffix = /\s*\(([^()]*)\)$/.exec(name)
+  return suffix && suffix.index > 0 && ENERGIES.has(normalizeImportText(suffix[1]!))
+    ? name.slice(0, suffix.index).trimEnd()
+    : name
+}
+
+type ImportCompany = Pick<ImportDossier, 'raison_sociale' | 'siret' | 'energie'>
+
+export function companyMatchesImport(a: ImportCompany, b: ImportCompany) {
+  if (a.energie && b.energie && a.energie !== b.energie) return false
+  const aName = normalizeImportText(companyNameWithoutEnergy(a.raison_sociale))
+  return (a.siret !== null && a.siret === b.siret)
+    || (aName !== '' && aName === normalizeImportText(companyNameWithoutEnergy(b.raison_sociale)))
 }
 
 export function parseImportRows(
@@ -170,9 +181,12 @@ export function parseImportRows(
   statuses: ImportStatusMapping,
   profiles: ImportProfile[],
   epoch1904 = false,
+  fournisseurs: Fournisseur[] = [],
 ): ImportPreview {
   const rows: ImportRow[] = []
   const unknown = new Map<string, string>()
+  const fournisseursParNom = new Map(fournisseurs.map(f => [normalizeImportText(f.nom), f]))
+  const fournisseursParCode = new Map(fournisseurs.map(f => [normalizeImportText(f.code), f]))
 
   for (const [index, row] of sheet.entries()) {
     if (index === 0 || isBlankImportRow(row)) continue
@@ -208,18 +222,21 @@ export function parseImportRows(
     const statusLabel = rawStatus.slice(0, 255)
     const statusKey = normalizeImportText(statusLabel)
     const status = rawStatus.length > 255 ? null
-      : STATUS_ALIASES.get(statusKey) ?? (Object.hasOwn(statuses, statusKey) ? statuses[statusKey] : null)
+      : STATUS_ALIASES.get(statusKey) ?? (Object.hasOwn(statuses, statusKey) ? statuses[statusKey] : null) ?? 'signe'
     if (rawStatus.length > 255) {
       errors.push('Statut invalide (255 caractères maximum).')
-    } else if (!status) {
-      errors.push(statusKey ? 'Associez ce statut à un statut du CRM.' : 'Statut manquant.')
-      if (statusKey) unknown.set(statusKey, statusLabel)
+    } else if (statusKey && !STATUS_ALIASES.has(statusKey)) {
+      unknown.set(statusKey, statusLabel)
     }
 
-    const provider = normalizeImportText(text('fournisseur'))
+    const fournisseurSaisi = text('fournisseur')
+    const cleFournisseur = normalizeImportText(fournisseurSaisi)
+    const fournisseur = fournisseursParNom.get(cleFournisseur) ?? fournisseursParCode.get(cleFournisseur)
     const energy = normalizeImportText(text('energie'))
-    if (provider && !PROVIDERS.has(provider)) errors.push('Fournisseur inconnu.')
-    if (energy && !ENERGIES.has(energy)) errors.push('Énergie inconnue. Utilisez Gaz ou Électricité.')
+    const energie = ENERGIES.get(energy) ?? null
+    if (fournisseurSaisi && !fournisseur) errors.push('Fournisseur inconnu.')
+    if (fournisseur && !fournisseur.actif) errors.push('Fournisseur désactivé.')
+    if (energy && !energie) errors.push('Énergie inconnue. Utilisez Gaz ou Électricité.')
     const date_signature = checked('date_signature', value => parseImportDate(value, epoch1904))
     const debut_livraison = checked('debut_livraison', value => parseImportDate(value, epoch1904))
     const fin_livraison = checked('fin_livraison', value => parseImportDate(value, epoch1904))
@@ -227,20 +244,27 @@ export function parseImportRows(
       errors.push('La fin de livraison précède le début.')
     }
 
+    const nomSaisi = raisonSociale.slice(0, 255)
+    const nomDossier = energie && nomSaisi
+      ? `${companyNameWithoutEnergy(nomSaisi)} (${energie === 'electricite' ? 'Élec' : 'Gaz'})`
+      : nomSaisi
+    if (raisonSociale.length <= 255 && nomDossier.length > 255) {
+      errors.push('La société dépasse 255 caractères avec le suffixe de l’énergie.')
+    }
     const dossier: ImportDossier = {
-      raison_sociale: raisonSociale.slice(0, 255),
+      raison_sociale: nomDossier,
       siret: siret?.slice(0, 32) ?? null,
       statut: status ?? null,
       commission_cents: checked('commission_ht', parseImportCommission),
-      fournisseur: PROVIDERS.get(provider) ?? null,
-      energie: ENERGIES.get(energy) ?? null,
+      fournisseur: fournisseur?.actif ? fournisseur.code : null,
+      energie,
       date_signature,
       debut_livraison,
       fin_livraison,
       assigne_a: assignee('assigne_a', ASSIGNABLE_ROLES),
       teleprospecteur_id: assignee('teleprospecteur_id', ['telepro']),
     }
-    const matching = rows.filter(other => companyMatchesImport(dossier, other.dossier))
+    const matching = errors.length ? [] : rows.filter(other => !other.errors.length && companyMatchesImport(dossier, other.dossier))
     for (const other of matching) other.duplicateInFile = true
     rows.push({
       line: index + 1,
@@ -251,5 +275,5 @@ export function parseImportRows(
       duplicateInFile: matching.length > 0,
     })
   }
-  return { rows, unknownStatuses: Array.from(unknown, ([key, label]) => ({ key, label })), profiles }
+  return { rows, unknownStatuses: Array.from(unknown, ([key, label]) => ({ key, label })), profiles, fournisseurs }
 }

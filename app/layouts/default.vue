@@ -27,6 +27,7 @@ const nav = computed<NavItem[]>(() => [
   { to: '/planning', label: 'Planning', show: isStaff.value, icon: 'calendar' },
   { to: '/carte', label: 'Carte des RDV', show: isStaff.value, icon: 'map' },
   { to: '/admin/utilisateurs', label: 'Équipe', show: isAdmin.value, icon: 'team' },
+  { to: '/admin/referentiels', label: 'Référentiels', show: isAdmin.value, icon: 'list' },
   { to: '/admin/parametres', label: 'Paramètres', show: isAdmin.value, icon: 'cog' },
 ].filter(i => i.show))
 
@@ -52,7 +53,7 @@ watch(() => route.path, () => { sheetOpen.value = false })
         <span class="text-lg font-bold" style="font-family: Manrope, sans-serif">R&A Energy</span>
         <span class="rounded bg-secondary/30 px-1.5 py-0.5 text-xs font-medium text-secondary">CRM</span>
       </div>
-      <nav class="flex-1 space-y-1 px-3">
+      <nav class="flex-1 space-y-1 overflow-y-auto px-3">
         <NuxtLink
           v-for="item in nav"
           :key="item.to"

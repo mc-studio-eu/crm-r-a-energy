@@ -2,14 +2,16 @@ import { z } from 'zod'
 
 const bodySchema = z.object({
   email: z.string().email(),
-  nom: z.string().min(1),
+  nom: z.string().trim().min(1).max(120),
   role: z.enum(['admin', 'telepro', 'commercial', 'regie_interne', 'regie_externe', 'apporteur_externe']),
 })
 
 /** Création de compte salarié par l'admin uniquement — invitation par email (ticket 04). */
 export default defineEventHandler(async (event) => {
   await requireRole(event, ['admin'])
-  const body = bodySchema.parse(await readBody(event))
+  const parsed = bodySchema.safeParse(await readBody(event))
+  if (!parsed.success) throw createError({ statusCode: 400, message: 'Les paramètres de l’invitation sont invalides.' })
+  const body = parsed.data
 
   const admin = supabaseAdmin()
   const config = useRuntimeConfig()

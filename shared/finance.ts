@@ -1,4 +1,5 @@
 export const MAX_FINANCE_CENTS = 1_000_000_000_000
+export const MAX_FINANCE_BENEFICIAIRES = 3
 export const FINANCE_PAGE_SIZE = 75
 
 export const FINANCE_TYPES = {
@@ -27,6 +28,7 @@ export interface FinanceRepartition {
   taux_bps: number
   fonction: string
   montant_cents: number
+  saisie_montant: boolean
 }
 
 export interface FinancePaiement {
@@ -91,8 +93,12 @@ export interface FinanceAnnuaire {
   profils: { id: string, nom: string }[]
 }
 
+export type FinanceRepartitionSaisie = { beneficiaire_id: string, fonction: string } & (
+  { taux_bps: number, montant_cents?: never } | { montant_cents: number, taux_bps?: never }
+)
+
 export type FinanceAction =
-  | { action: 'commission', commission_cents: number, repartitions: { beneficiaire_id: string, taux_bps: number, fonction: string }[] }
+  | { action: 'commission', commission_cents: number, repartitions: FinanceRepartitionSaisie[] }
   | { action: 'echeance', id?: string, repartition_id: string | null, date_prevue: string, montant_cents: number, note: string }
   | { action: 'paiement', id?: string, echeance_id: string, date_paiement: string, montant_cents: number, note: string }
   | { action: 'supprimer_echeance' | 'supprimer_paiement', id: string }
@@ -108,6 +114,31 @@ export function parseFinanceDecimal(value: string, max: number): number | null {
 export function financeDecimal(value: number | null): string {
   if (value === null) return ''
   return `${Math.floor(value / 100)},${String(value % 100).padStart(2, '0')}`
+}
+
+/** Convert an amount to the closest basis point, without exceeding safe integer precision. */
+export function financeTauxBps(commission: number, montant: number): number | null {
+  if (montant > commission) return null
+  if (commission === 0) return 0
+  const base = BigInt(commission)
+  return Number((BigInt(montant) * 10_000n + base / 2n) / base)
+}
+
+/** Match the SQL allocation of percentage-based parts, including tied remainders. */
+export function financeMontantsParTaux(commission: number, parts: readonly { beneficiaire_id: string, taux_bps: number }[]): number[] {
+  const base = BigInt(commission)
+  const calculs = parts.map((part, index) => {
+    const produit = base * BigInt(part.taux_bps)
+    return { id: part.beneficiaire_id, index, plancher: produit / 10_000n, reste: Number(produit % 10_000n) }
+  })
+  const totalTaux = parts.reduce((sum, part) => sum + part.taux_bps, 0)
+  const totalPlancher = calculs.reduce((sum, part) => sum + part.plancher, 0n)
+  const ecart = Number((base * BigInt(totalTaux) + 5_000n) / 10_000n - totalPlancher)
+  const montants = calculs.map(part => Number(part.plancher))
+  calculs.sort((a, b) => b.reste - a.reste || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, ecart)
+    .forEach(({ index, plancher }) => { montants[index] = Number(plancher) + 1 })
+  return montants
 }
 
 const currency = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })

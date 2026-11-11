@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { FOURNISSEURS, PROSPECT_STATUTS, type ProspectStatut } from '~~/shared/types'
+import { PROSPECT_STATUTS, type ProspectStatut } from '~~/shared/types'
 import {
   IMPORT_COLUMNS, IMPORT_COLUMN_KEYS, IMPORT_MAX_BYTES, IMPORT_MAX_COLUMNS, IMPORT_MAX_MB, IMPORT_MAX_ROWS,
   inferImportMapping,
@@ -33,6 +33,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil((preview.value?.rows.len
 const visibleRows = computed(() => preview.value?.rows.slice((page.value - 1) * PAGE_SIZE, page.value * PAGE_SIZE) ?? [])
 const errorCount = computed(() => preview.value?.rows.filter(row => row.errors.length).length ?? 0)
 const profileName = computed(() => new Map(preview.value?.profiles.map(profile => [profile.id, profile.nom])))
+const fournisseurName = computed(() => new Map(preview.value?.fournisseurs.map(f => [f.code, f.nom])))
 const currency = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
 
 function isPotentialDuplicate(row: ImportRow) {
@@ -41,7 +42,7 @@ function isPotentialDuplicate(row: ImportRow) {
 
 const selection = computed<ImportSelection[]>(() => (preview.value?.rows ?? [])
   .filter(row => selectedLines.value.has(row.line) && !row.errors.length)
-  .map(row => ({ line: row.line, allowDuplicate: isPotentialDuplicate(row) })))
+  .map(row => ({ line: row.line, allowDuplicate: isPotentialDuplicate(row), fournisseur: row.dossier.fournisseur })))
 
 function resetPreview() {
   preview.value = null
@@ -209,6 +210,8 @@ async function confirmImport() {
       <section v-if="sheet?.rows" class="card space-y-4" aria-labelledby="import-mapping">
         <h2 id="import-mapping" class="text-base font-semibold">Correspondance des colonnes</h2>
         <p class="text-sm text-gray-600">Une commission vide reste inconnue. Saisissez 0 pour une commission nulle.</p>
+        <p class="text-sm text-gray-600">Le statut est « Signé » par défaut si la colonne est absente, vide ou non reconnue. Les statuts CRM reconnus sont conservés.</p>
+        <p class="text-sm text-gray-600">Les dossiers sont nommés avec la société et l’énergie : « Société (Élec) » ou « Société (Gaz) ». Deux énergies différentes créent deux dossiers distincts.</p>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div v-for="key in IMPORT_COLUMN_KEYS" :key="key">
             <label class="label" :for="`import-col-${key}`">
@@ -226,12 +229,13 @@ async function confirmImport() {
       </section>
 
       <section v-if="preview?.unknownStatuses.length" class="card space-y-4" aria-labelledby="import-statuses">
-        <h2 id="import-statuses" class="text-base font-semibold">Statuts à associer</h2>
+        <h2 id="import-statuses" class="text-base font-semibold">Statuts appliqués par défaut</h2>
+        <p class="text-sm text-gray-600">Ces statuts Excel seront importés comme « Signé ». Vous pouvez choisir un autre statut si nécessaire.</p>
         <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <div v-for="(status, index) in preview.unknownStatuses" :key="status.key">
             <label class="label break-words" :for="`import-status-${index}`">{{ status.label }}</label>
             <select :id="`import-status-${index}`" :value="Object.hasOwn(statuses, status.key) ? statuses[status.key] : ''" :disabled="busy" class="input" @change="mapStatus(status.key, $event)">
-              <option value="">Choisir un statut CRM</option>
+              <option value="">Signé (par défaut)</option>
               <option v-for="(label, key) in PROSPECT_STATUTS" :key="key" :value="key">{{ label }}</option>
             </select>
           </div>
@@ -268,7 +272,7 @@ async function confirmImport() {
                   </div>
                   <dl class="mt-1 text-xs text-gray-600">
                     <div v-if="row.dossier.fournisseur || row.dossier.energie">
-                      {{ row.dossier.fournisseur ? FOURNISSEURS[row.dossier.fournisseur] : '' }}
+                      {{ row.dossier.fournisseur ? fournisseurName.get(row.dossier.fournisseur) : '' }}
                       {{ row.dossier.energie === 'gaz' ? 'Gaz' : row.dossier.energie === 'electricite' ? 'Électricité' : '' }}
                     </div>
                     <div v-if="row.dossier.date_signature"><dt class="inline">Signature</dt> <dd class="inline">{{ row.dossier.date_signature }}</dd></div>
@@ -286,6 +290,7 @@ async function confirmImport() {
                   <span v-else-if="isPotentialDuplicate(row)" class="text-sm text-amber-800">
                     {{ row.duplicateInCrm ? 'Doublon potentiel dans les dossiers' : 'Doublon potentiel dans la feuille' }}
                   </span>
+                  <span v-else class="text-sm text-primary">Prêt à importer</span>
                 </td>
               </tr>
             </tbody>

@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { FOURNISSEURS } from '~~/shared/types'
 import {
   FINANCE_PAGE_SIZE, FINANCE_TYPES, financeDate, financeEuros, financeToday,
   type FinanceAnnuaire, type FinanceBeneficiaire, type FinanceTableau, type FinanceType,
@@ -7,6 +6,7 @@ import {
 
 const { isAdmin, load } = useProfile()
 await load()
+const { data: fournisseurs, error: erreurFournisseurs, refresh: refreshFournisseurs } = useFournisseurs()
 
 const annee = ref(Number(financeToday().slice(0, 4)))
 const mois = ref('')
@@ -26,7 +26,10 @@ const moisOptions = Array.from({ length: 12 }, (_, i) => ({
 watch([annee, mois, societe, fournisseur, energie, beneficiaire, commercial, type], () => { page.value = 1 }, { flush: 'sync' })
 watch([societe, fournisseur, energie], () => { dossiersPage.value = 1 }, { flush: 'sync' })
 
-const { data: tableau, status, error, refresh } = await useFetch<FinanceTableau>('/api/finances', {
+const lectureOptions = { server: false, timeout: 15_000 } as const
+
+const { data: tableau, status, error, refresh } = useLazyFetch<FinanceTableau>('/api/finances', {
+  ...lectureOptions,
   query: computed(() => ({
     annee: annee.value,
     mois: mois.value || undefined,
@@ -39,7 +42,6 @@ const { data: tableau, status, error, refresh } = await useFetch<FinanceTableau>
     page: page.value,
     dossiers_page: dossiersPage.value,
   })),
-  lazy: true, server: false,
 })
 
 interface FinanceFiltres {
@@ -48,10 +50,22 @@ interface FinanceFiltres {
   commerciaux: { id: string, nom: string }[]
 }
 
-const { data: filtres, error: erreurFiltres, refresh: refreshFiltres } = await useFetch<FinanceFiltres>('/api/finances/filtres', { immediate: isAdmin.value, lazy: true, server: false })
-const { data: annuaire, error: erreurAnnuaire, refresh: refreshAnnuaire } = await useFetch<FinanceAnnuaire>('/api/beneficiaires', {
-  query: { profils: '1' }, immediate: isAdmin.value, lazy: true, server: false,
+const { data: filtres, status: statutFiltres, error: erreurFiltres, refresh: refreshFiltres } = useLazyFetch<FinanceFiltres>('/api/finances/filtres', {
+  ...lectureOptions,
+  immediate: isAdmin.value,
 })
+const { data: annuaire, status: statutAnnuaire, error: erreurAnnuaire, refresh: refreshAnnuaire } = useLazyFetch<FinanceAnnuaire>('/api/beneficiaires', {
+  ...lectureOptions,
+  query: { profils: '1' },
+  immediate: isAdmin.value,
+})
+
+function messageErreurLecture(erreur: unknown) {
+  if (erreur instanceof Error && erreur.cause instanceof DOMException && erreur.cause.name === 'TimeoutError') {
+    return 'Le serveur met trop de temps à répondre.'
+  }
+  return errorMessage(erreur)
+}
 
 const types = computed<FinanceType[]>(() => isAdmin.value && !beneficiaire.value
   ? ['signature', 'part_signee', 'part_ra', 'entree_prevue', 'entree_reelle', 'sortie_prevue', 'sortie_reelle']
@@ -84,7 +98,7 @@ watch(totalPagesDossiers, count => { if (dossiersPage.value > count) dossiersPag
 watch(types, options => { if (type.value && !options.includes(type.value)) type.value = '' })
 
 function fournisseurNom(value: string | null) {
-  return Object.entries(FOURNISSEURS).find(([key]) => key === value)?.[1] ?? value ?? '—'
+  return fournisseurs.value.find(f => f.code === value)?.nom ?? value ?? '—'
 }
 
 function energieNom(value: string | null) {
@@ -179,11 +193,12 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
           {{ isAdmin ? 'Commissions, échéances et règlements des dossiers.' : 'Votre part sur les dossiers signés et le suivi de vos reversements.' }}
         </p>
       </div>
-      <a v-if="isAdmin" href="#beneficiaires" class="btn-secondary">Gérer les bénéficiaires</a>
+      <NuxtLink v-if="isAdmin" :to="{ hash: '#beneficiaires' }" class="btn-secondary">Gérer les bénéficiaires</NuxtLink>
     </header>
 
-    <p v-if="error" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-      {{ errorMessage(error) }}
+    <p v-if="error && status !== 'pending'" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-700">
+      {{ messageErreurLecture(error) }}
+      <button type="button" class="underline" @click="refresh()">Réessayer</button>
     </p>
     <p v-else-if="!tableau" class="text-sm text-gray-600">
       Chargement des finances…
@@ -294,9 +309,9 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
           </label>
           <label>
             <span class="label">Fournisseur</span>
-            <select v-model="fournisseur" class="input">
+            <select v-model="fournisseur" class="input" :disabled="!!erreurFournisseurs">
               <option value="">Tous</option>
-              <option v-for="(label, value) in FOURNISSEURS" :key="value" :value="value">{{ label }}</option>
+              <option v-for="f in fournisseurs" :key="f.code" :value="f.code">{{ f.nom }}{{ f.actif ? '' : ' (désactivé)' }}</option>
             </select>
           </label>
           <label>
@@ -317,7 +332,11 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
         </template>
       </div>
       <p v-if="isAdmin && erreurFiltres" role="alert" class="mt-2 text-sm text-red-700">
-        {{ errorMessage(erreurFiltres) }}
+        {{ messageErreurLecture(erreurFiltres) }}
+        <button type="button" class="underline" :disabled="statutFiltres === 'pending'" @click="refreshFiltres()">Réessayer</button>
+      </p>
+      <p v-if="erreurFournisseurs" role="alert" class="mt-2 text-sm text-red-700">
+        Impossible de charger les fournisseurs. <button type="button" class="underline" @click="refreshFournisseurs()">Réessayer</button>
       </p>
     </section>
 
@@ -481,8 +500,12 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
           </div>
         </fieldset>
       </form>
-      <p v-if="erreurEdition || erreurAnnuaire" role="alert" class="text-sm text-red-700">
-        {{ erreurEdition || errorMessage(erreurAnnuaire) }}
+      <p v-if="erreurEdition" role="alert" class="text-sm text-red-700">
+        {{ erreurEdition }}
+      </p>
+      <p v-if="erreurAnnuaire" role="alert" class="text-sm text-red-700">
+        {{ messageErreurLecture(erreurAnnuaire) }}
+        <button type="button" class="underline" :disabled="statutAnnuaire === 'pending'" @click="refreshAnnuaire()">Réessayer</button>
       </p>
       <p v-else-if="confirmation" role="status" class="text-sm text-primary">{{ confirmation }}</p>
       <p v-if="annuaire && !annuaire.beneficiaires.length" class="text-sm text-gray-600">

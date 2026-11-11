@@ -3,7 +3,7 @@ import readXlsxFile from 'read-excel-file/universal'
 import { Parser } from 'saxen'
 import { fromBufferPromise } from 'yauzl'
 import writeXlsxFile from 'write-excel-file/node'
-import { FOURNISSEURS, PROSPECT_STATUTS } from '../../shared/types'
+import { PROSPECT_STATUTS, type Fournisseur } from '../../shared/types'
 import {
   IMPORT_COLUMNS, IMPORT_COLUMN_KEYS, IMPORT_MAX_BYTES, IMPORT_MAX_COLUMNS, IMPORT_MAX_MB, IMPORT_MAX_ROWS, type ImportCell,
 } from '../../shared/import-dossiers'
@@ -115,7 +115,7 @@ export async function readImportWorkbook(buffer: Buffer) {
   }
 }
 
-export function makeImportTemplate() {
+export function makeImportTemplate(fournisseurs: Pick<Fournisseur, 'nom'>[] = []) {
   const heading = { fontWeight: 'bold' as const, color: '#FFFFFF', backgroundColor: '#31694E' }
   return writeXlsxFile([
     {
@@ -129,10 +129,10 @@ export function makeImportTemplate() {
         [{ ...heading, value: 'Colonne' }, { ...heading, value: 'Valeurs attendues' }],
         ['Société', 'Obligatoire. Indiquez la raison sociale.'],
         ['Commission HT', 'En euros. Laissez vide si inconnue. Saisissez 0 si le montant est nul.'],
-        ['Statut', Object.values(PROSPECT_STATUTS).join(', ')],
+        ['Statut', `${Object.values(PROSPECT_STATUTS).join(', ')}. Facultatif : Signé par défaut si absent, vide ou non reconnu.`],
         ['SIRET', 'Facultatif. Saisissez les 14 chiffres au format texte.'],
-        ['Fournisseur', Object.values(FOURNISSEURS).join(', ')],
-        ['Énergie', 'Gaz ou Électricité.'],
+        ['Fournisseur', fournisseurs.map(f => f.nom).join(', ') || 'Aucun fournisseur actif. Laissez la colonne vide.'],
+        ['Énergie', 'Gaz ou Électricité. Le nom du dossier devient Société (Gaz) ou Société (Élec). Deux énergies différentes créent des dossiers distincts.'],
         ['Dates', 'Date Excel ou JJ/MM/AAAA.'],
         ['Intervenants', 'Nom du compte actif ou identifiant du compte en cas d’homonymie.'],
       ],

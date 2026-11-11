@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import {
-  financeDate, financeDecimal, financeEuros, financeToday, MAX_FINANCE_CENTS, parseFinanceDecimal,
-  type FinanceAction, type FinanceAnnuaire, type FinanceDossier, type FinanceEcheance, type FinancePaiement,
+  financeDate, financeDecimal, financeEuros, financeMontantsParTaux, financeTauxBps, financeToday, MAX_FINANCE_BENEFICIAIRES, MAX_FINANCE_CENTS, parseFinanceDecimal,
+  type FinanceAction, type FinanceAnnuaire, type FinanceDossier, type FinanceEcheance, type FinancePaiement, type FinanceRepartitionSaisie,
 } from '~~/shared/finance'
 
 const props = defineProps<{ prospectId: string }>()
@@ -10,7 +10,8 @@ const { data: dossier, status, error: lectureErreur, refresh } = await useFetch<
 const { data: annuaire, error: annuaireErreur } = await useFetch<FinanceAnnuaire>('/api/beneficiaires', { lazy: true, server: false })
 
 const base = ref('')
-const parts = ref<{ beneficiaire_id: string, taux: string, fonction: string }[]>([])
+type Part = { beneficiaire_id: string, fonction: string, saisie: 'taux' | 'montant', valeur: string }
+const parts = ref<Part[]>([])
 const erreur = ref('')
 const message = ref('')
 const enCours = ref(false)
@@ -23,13 +24,44 @@ const mouvement = reactive({ date: '', montant: '', note: '' })
 const beneficiaires = computed(() => annuaire.value?.beneficiaires ?? [])
 const partsEnregistrees = computed(() => dossier.value?.repartitions ?? [])
 const echeances = computed(() => dossier.value?.echeances ?? [])
+const echeancePaiement = computed(() => {
+  const cible = edition.value
+  return cible?.type === 'paiement' ? echeances.value.find(e => e.id === cible.echeance_id) : undefined
+})
+const commissionCents = computed(() => parseFinanceDecimal(base.value, MAX_FINANCE_CENTS))
+const lignesParts = computed(() => {
+  const commission = commissionCents.value
+  const lignes = parts.value.map((part) => {
+    const valeur = parseFinanceDecimal(part.valeur, part.saisie === 'montant' ? MAX_FINANCE_CENTS : 10_000)
+    return {
+      part,
+      valeur,
+      montant: part.saisie === 'montant' ? valeur : null,
+      taux: part.saisie === 'taux' ? valeur : commission === null || valeur === null ? null : financeTauxBps(commission, valeur),
+    }
+  })
+  if (commission !== null) {
+    const parTaux = lignes.flatMap(ligne => ligne.part.saisie === 'taux' && ligne.taux !== null
+      ? [{ ligne, beneficiaire_id: ligne.part.beneficiaire_id, taux_bps: ligne.taux }]
+      : [])
+    const montants = financeMontantsParTaux(commission, parTaux)
+    parTaux.forEach(({ ligne }, index) => { ligne.montant = montants[index] ?? null })
+  }
+  return lignes
+})
+
+function modifierPart(part: Part, saisie: Part['saisie'], event: Event) {
+  part.saisie = saisie
+  part.valeur = (event.target as HTMLInputElement).value
+}
 
 function initialiserCommission() {
   base.value = financeDecimal(dossier.value?.commission_cents ?? null)
   parts.value = partsEnregistrees.value.map(part => ({
     beneficiaire_id: part.beneficiaire_id,
-    taux: financeDecimal(part.taux_bps),
     fonction: part.fonction,
+    saisie: part.saisie_montant ? 'montant' : 'taux',
+    valeur: financeDecimal(part.saisie_montant ? part.montant_cents : part.taux_bps),
   }))
 }
 
@@ -38,6 +70,7 @@ watch(dossier, (value, before) => {
 }, { immediate: true })
 
 async function enregistrer(action: FinanceAction, succes: string) {
+  if (enCours.value) return false
   enCours.value = true
   erreur.value = ''
   message.value = ''
@@ -57,20 +90,33 @@ async function enregistrer(action: FinanceAction, succes: string) {
 }
 
 async function enregistrerCommission() {
-  const commission = parseFinanceDecimal(base.value, MAX_FINANCE_CENTS)
+  const commission = commissionCents.value
   if (commission === null) {
     erreur.value = 'Saisissez une commission positive ou nulle, avec deux décimales au maximum.'
     return
   }
-  const repartitions = parts.value.map(part => ({
-    beneficiaire_id: part.beneficiaire_id,
-    taux_bps: parseFinanceDecimal(part.taux, 10_000) ?? -1,
-    fonction: part.fonction.trim(),
-  }))
-  if (repartitions.some(part => !part.beneficiaire_id || !part.fonction || part.taux_bps < 0)
-    || new Set(repartitions.map(part => part.beneficiaire_id)).size !== repartitions.length
-    || repartitions.reduce((sum, part) => sum + part.taux_bps, 0) > 10_000) {
-    erreur.value = 'Choisissez des bénéficiaires distincts avec une fonction et des taux dont la somme ne dépasse pas 100 %.'
+  const repartitions: FinanceRepartitionSaisie[] = []
+  for (const { part, valeur } of lignesParts.value) {
+    const fonction = part.fonction.trim()
+    if (!part.beneficiaire_id || !fonction || repartitions.some(r => r.beneficiaire_id === part.beneficiaire_id)) {
+      erreur.value = 'Choisissez des bénéficiaires distincts et renseignez leur fonction.'
+      return
+    }
+    if (valeur === null) {
+      erreur.value = part.saisie === 'montant'
+        ? 'Saisissez un montant positif ou nul, avec deux décimales au maximum.'
+        : 'Saisissez un pourcentage entre 0 et 100 %, avec deux décimales au maximum.'
+      return
+    }
+    const champs = { beneficiaire_id: part.beneficiaire_id, fonction }
+    repartitions.push(part.saisie === 'montant' ? { ...champs, montant_cents: valeur } : { ...champs, taux_bps: valeur })
+  }
+  if (repartitions.reduce((sum, part) => sum + (part.taux_bps ?? 0), 0) > 10_000) {
+    erreur.value = 'La somme des pourcentages saisis ne peut pas dépasser 100 %.'
+    return
+  }
+  if (lignesParts.value.reduce((sum, part) => sum + (part.montant ?? 0), 0) > commission) {
+    erreur.value = 'La somme des montants des bénéficiaires ne peut pas dépasser la commission totale.'
     return
   }
   if (await enregistrer({ action: 'commission', commission_cents: commission, repartitions }, 'Commission enregistrée.')) {
@@ -80,6 +126,13 @@ async function enregistrerCommission() {
 
 function totalPaye(echeance: FinanceEcheance) {
   return echeance.paiements.reduce((total, paiement) => total + paiement.montant_cents, 0)
+}
+
+function statutPaiement(e: FinanceEcheance) {
+  const paye = totalPaye(e)
+  if (paye >= e.montant_cents) return { libelle: 'Payé', classe: 'bg-primary/10 text-primary' }
+  if (paye > 0) return { libelle: 'Partiellement payé', classe: 'bg-amber-100 text-amber-800' }
+  return { libelle: 'Non payé', classe: 'bg-gray-100 text-gray-700' }
 }
 
 async function ouvrirMouvement(cible: Edition, date: string, montant: number | null, note: string | null) {
@@ -167,7 +220,7 @@ function sens(e: FinanceEcheance) {
             <span class="label">Commission totale fournisseur (€ HT)</span>
             <input v-model="base" class="input" inputmode="decimal" placeholder="0,00" required>
           </label>
-          <div v-for="(part, index) in parts" :key="index" class="grid items-end gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_6rem_auto]">
+          <div v-for="({ part, montant, taux }, index) in lignesParts" :key="index" class="grid items-end gap-2 sm:grid-cols-2 lg:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(5rem,1fr)_minmax(8rem,1fr)_auto]">
             <label>
               <span class="label">Bénéficiaire {{ index + 1 }}</span>
               <select v-model="part.beneficiaire_id" class="input" required>
@@ -188,12 +241,27 @@ function sens(e: FinanceEcheance) {
             </label>
             <label>
               <span class="label">Part (%)</span>
-              <input v-model="part.taux" inputmode="decimal" class="input" placeholder="0,00" required>
+              <input
+                :value="part.saisie === 'taux' ? part.valeur : financeDecimal(taux)"
+                inputmode="decimal" class="input" placeholder="0,00" :required="part.saisie === 'taux'"
+                @input="modifierPart(part, 'taux', $event)"
+              >
             </label>
-            <button type="button" class="btn-secondary" @click="parts.splice(index, 1)">
+            <label>
+              <span class="label">Montant (€ HT)</span>
+              <input
+                :value="part.saisie === 'montant' ? part.valeur : financeDecimal(montant)"
+                inputmode="decimal" class="input" placeholder="0,00" :required="part.saisie === 'montant'"
+                @input="modifierPart(part, 'montant', $event)"
+              >
+            </label>
+            <button type="button" class="btn-secondary justify-self-start" @click="parts.splice(index, 1)">
               Retirer
             </button>
           </div>
+          <p v-if="parts.some(part => part.saisie === 'montant')" class="text-xs text-gray-600">
+            Le pourcentage calculé à partir d’un montant est arrondi à deux décimales.
+          </p>
           <p v-if="annuaireErreur" role="alert" class="text-sm text-red-700">
             {{ errorMessage(annuaireErreur) }}
           </p>
@@ -202,11 +270,11 @@ function sens(e: FinanceEcheance) {
               Enregistrer la commission
             </button>
             <button
-              v-if="parts.length < 2" type="button" class="btn-secondary"
+              v-if="parts.length < MAX_FINANCE_BENEFICIAIRES" type="button" class="btn-secondary"
               :disabled="!beneficiaires.some(b => b.actif && !parts.some(p => p.beneficiaire_id === b.id))"
-              @click="parts.push({ beneficiaire_id: '', taux: '', fonction: 'Apporteur' })"
+              @click="parts.push({ beneficiaire_id: '', saisie: 'taux', valeur: '', fonction: 'Apporteur' })"
             >
-              Ajouter une part
+              Ajouter un bénéficiaire
             </button>
           </div>
         </fieldset>
@@ -229,7 +297,7 @@ function sens(e: FinanceEcheance) {
         <form v-if="edition" ref="formulaire" class="space-y-3 rounded-lg bg-gray-50 p-4" @submit.prevent="enregistrerMouvement">
           <fieldset :disabled="enCours" class="space-y-3">
             <legend class="mb-2 text-sm font-semibold">
-              {{ edition.id ? 'Corriger' : 'Ajouter' }} {{ edition.type === 'echeance' ? 'une échéance' : 'un paiement' }}
+              {{ edition.id ? 'Corriger' : 'Ajouter' }} {{ edition.type === 'echeance' ? 'une échéance' : echeancePaiement && !echeancePaiement.repartition_id ? 'un paiement fournisseur reçu' : 'un paiement' }}
             </legend>
             <label v-if="edition.type === 'echeance' && !edition.id" class="block">
               <span class="label">Flux</span>
@@ -242,6 +310,10 @@ function sens(e: FinanceEcheance) {
                 </option>
               </select>
             </label>
+            <p v-if="echeancePaiement && !echeancePaiement.repartition_id" class="text-sm text-gray-600">
+              Échéance fournisseur du {{ financeDate(echeancePaiement.date_prevue) }}.
+              Saisissez le montant réellement reçu et sa date. Le solde complet passe l’échéance à « Payé » ; un montant inférieur la passe à « Partiellement payé ».
+            </p>
             <div class="grid gap-3 sm:grid-cols-2">
               <label>
                 <span class="label">{{ edition.type === 'echeance' ? 'Date prévue' : 'Date du paiement' }}</span>
@@ -269,45 +341,59 @@ function sens(e: FinanceEcheance) {
         <p v-if="!echeances.length" class="text-sm text-gray-500">
           Aucune échéance enregistrée.
         </p>
-        <details v-for="e in echeances" :key="e.id" class="rounded-lg border border-gray-200 p-3">
-          <summary class="cursor-pointer text-sm">
-            <strong>{{ sens(e) }}</strong> · {{ financeDate(e.date_prevue) }} · {{ financeEuros(e.montant_cents) }}
-            <span class="ml-1 text-gray-600">({{ financeEuros(totalPaye(e)) }} payés)</span>
-          </summary>
-          <p v-if="e.note" class="mt-2 break-words text-sm text-gray-600">
-            {{ e.note }}
-          </p>
-          <div class="mt-3 flex flex-wrap gap-2">
-            <button type="button" class="btn-secondary" :disabled="enCours || totalPaye(e) >= e.montant_cents" @click="ouvrirPaiement(e)">
-              Ajouter un paiement
-            </button>
-            <button type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirEcheance(e)">
-              Corriger l’échéance
-            </button>
-            <button
-              v-if="!e.paiements.length" type="button" class="btn-secondary"
-              :disabled="enCours" @click="supprimerMouvement('echeance', e.id)"
-            >
-              Supprimer l’échéance
-            </button>
-          </div>
-          <ul v-if="e.paiements.length" class="mt-3 divide-y divide-gray-100 text-sm">
-            <li v-for="p in e.paiements" :key="p.id" class="flex flex-wrap items-center justify-between gap-2 py-2">
-              <span class="min-w-0 break-words">
-                {{ financeDate(p.date_paiement) }} · <strong>{{ financeEuros(p.montant_cents) }}</strong>
-                <span v-if="p.note" class="text-gray-600"> · {{ p.note }}</span>
+        <div v-for="e in echeances" :key="e.id" class="rounded-lg border border-gray-200 p-3">
+          <details>
+            <summary class="cursor-pointer text-sm">
+              <strong>{{ sens(e) }}</strong> · {{ financeDate(e.date_prevue) }} · {{ financeEuros(e.montant_cents) }}
+              <span class="ml-1 text-gray-600">({{ financeEuros(totalPaye(e)) }} {{ e.repartition_id ? 'versés' : 'reçus' }})</span>
+              <span class="ml-2 inline-block rounded-full px-2 py-0.5 text-xs font-medium" :class="statutPaiement(e).classe">
+                {{ statutPaiement(e).libelle }}{{ e.repartition_id ? '' : ' par le fournisseur' }}
               </span>
-              <div class="flex gap-2">
-                <button type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e, p)">
-                  Corriger
-                </button>
-                <button type="button" class="btn-secondary" :disabled="enCours" @click="supprimerMouvement('paiement', p.id)">
-                  Supprimer
-                </button>
-              </div>
-            </li>
-          </ul>
-        </details>
+            </summary>
+            <p v-if="e.note" class="mt-2 break-words text-sm text-gray-600">
+              {{ e.note }}
+            </p>
+            <div class="mt-3 flex flex-wrap gap-2">
+              <button v-if="e.repartition_id" type="button" class="btn-secondary" :disabled="enCours || totalPaye(e) >= e.montant_cents" @click="ouvrirPaiement(e)">
+                Ajouter un paiement
+              </button>
+              <button type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirEcheance(e)">
+                Corriger l’échéance
+              </button>
+              <button
+                v-if="!e.paiements.length" type="button" class="btn-secondary"
+                :disabled="enCours" @click="supprimerMouvement('echeance', e.id)"
+              >
+                Supprimer l’échéance
+              </button>
+            </div>
+            <ul v-if="e.paiements.length" class="mt-3 divide-y divide-gray-100 text-sm">
+              <li v-for="p in e.paiements" :key="p.id" class="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span class="min-w-0 break-words">
+                  {{ financeDate(p.date_paiement) }} · <strong>{{ financeEuros(p.montant_cents) }}</strong>
+                  <span v-if="p.note" class="text-gray-600"> · {{ p.note }}</span>
+                </span>
+                <div class="flex gap-2">
+                  <button type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e, p)">
+                    Corriger
+                  </button>
+                  <button type="button" class="btn-secondary" :disabled="enCours" @click="supprimerMouvement('paiement', p.id)">
+                    Supprimer
+                  </button>
+                </div>
+              </li>
+            </ul>
+          </details>
+          <div v-if="!e.repartition_id" class="mt-3 flex flex-wrap items-center gap-3">
+            <button v-if="totalPaye(e) < e.montant_cents" type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e)">
+              {{ totalPaye(e) > 0 ? 'Enregistrer le solde reçu' : 'Indiquer un paiement fournisseur' }}
+            </button>
+            <span v-if="totalPaye(e) < e.montant_cents" class="text-sm text-gray-600">
+              Reste à recevoir : {{ financeEuros(e.montant_cents - totalPaye(e)) }} HT
+            </span>
+            <span v-else class="text-sm text-primary">Paiement fournisseur intégralement reçu.</span>
+          </div>
+        </div>
       </div>
       <p v-if="erreur" role="alert" class="text-sm text-red-700">
         {{ erreur }}
