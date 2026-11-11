@@ -223,7 +223,7 @@ function activiteLabel(a: Activite) {
     </div>
 
     <div v-if="isAdmin && profile?.actif" class="mt-6">
-      <DossierReglementsFournisseur :key="id" :prospect-id="id" @finances-modifiees="panneauFinances?.actualiser()" />
+      <DossierReglementsFournisseur :key="id" :prospect-id="id" @reglements-modifies="panneauFinances?.actualiser()" />
     </div>
 
     <div v-if="isAdmin" class="mt-6">

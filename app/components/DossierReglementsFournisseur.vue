@@ -6,7 +6,7 @@ import {
 } from '~~/shared/reglements-fournisseur'
 
 const props = defineProps<{ prospectId: string }>()
-const emit = defineEmits<{ financesModifiees: [] }>()
+const emit = defineEmits<{ reglementsModifies: [] }>()
 const url = computed(() => `/api/prospects/${props.prospectId}/reglements-fournisseur`)
 const { data: reglements, status, error: erreurLecture } = await useFetch<ReglementFournisseur[]>(url, {
   lazy: true, server: false,
@@ -68,7 +68,6 @@ async function modifierListe(action: ActionReglementFournisseur) {
   message.value = ''
   try {
     const liste = reglements.value ?? []
-    const dejaComptabilise = liste.find(r => r.id === action.id)?.montant_recu_cents != null
     if (action.action === 'supprimer') {
       await $fetch(url.value, { method: 'POST', body: action })
       reglements.value = liste.filter(r => r.id !== action.id)
@@ -85,7 +84,7 @@ async function modifierListe(action: ActionReglementFournisseur) {
         annuler_reception: 'Réception annulée.',
       }[action.action]
     }
-    if (dejaComptabilise || action.action === 'recevoir') emit('financesModifiees')
+    emit('reglementsModifies')
   }
   catch (e) {
     erreur.value = errorMessage(e, 'L’opération sur le règlement a échoué.')
