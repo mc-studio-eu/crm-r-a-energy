@@ -146,7 +146,6 @@ function activiteLabel(a: Activite) {
           <StatusBadge :statut="prospect.statut" />
           <span v-if="prospect.archive" class="rounded-full bg-gray-200 px-2 py-0.5 text-xs font-medium text-gray-600">Archivé</span>
           <span v-if="prospect.siret" class="text-xs text-gray-400">SIRET {{ prospect.siret }}</span>
-          <NuxtLink :to="`/societes/${prospect.societe_id}`" class="text-xs text-primary hover:underline">Fiche société</NuxtLink>
         </div>
       </div>
       <div class="flex gap-2">

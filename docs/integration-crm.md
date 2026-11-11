@@ -2,11 +2,11 @@
 
 ## Parcours livré
 
-- **Sociétés** : une société regroupe plusieurs dossiers. Les fiches existantes gardent leurs identifiants. Le rapprochement de doublons est explicite et réservé aux admins ; aucune fusion automatique par SIRET.
+- **Une fiche unique** : un dossier représente une société. Raison sociale, SIRET, contacts, contrat et commissions se modifient depuis le dossier. Il n’existe plus de menu ni de formulaire société séparé. Les anciennes URL société redirigent vers le dossier correspondant.
 - **Dossiers** : quatre statuts, énergie, fournisseur, source, intervenants et dates contractuelles. R1/R2 qualifie chaque rendez-vous, indépendamment du statut du dossier.
 - **Finances** : le panneau du dossier permet de saisir la commission fournisseur HT, deux bénéficiaires maximum, leurs fonctions et pourcentages, les échéances et les paiements partiels. L’annuaire des bénéficiaires se trouve dans Finances. Un bénéficiaire peut exister sans compte ; l’admin peut lui rattacher un compte existant.
 - **Commissions personnelles** : les comptes autorisés voient uniquement leurs propres parts sur les dossiers signés, leurs échéances et leurs paiements. Les apporteurs externes n’accèdent pas aux fiches opérationnelles, aux notes ni aux documents.
-- **Import Excel** : depuis Dossiers → Importer Excel. Télécharger le modèle, sélectionner une feuille, associer les colonnes et vérifier les erreurs avant confirmation. XLSX de 2 Mio maximum, avec protection sur la taille décompressée. Les valeurs financières absentes restent inconnues ; aucune répartition ou écriture de paiement n’est créée automatiquement.
+- **Import Excel** : depuis Dossiers → Importer Excel. Télécharger le modèle, sélectionner une feuille, associer les colonnes et vérifier les erreurs avant confirmation. Les doublons potentiels peuvent être exclus ou créés explicitement comme dossiers indépendants ; aucune fusion ni aucun rattachement à un dossier existant. XLSX de 2 Mio maximum, avec protection sur la taille décompressée. Les valeurs financières absentes restent inconnues ; aucune répartition ou écriture de paiement n’est créée automatiquement.
 - **Google Agenda** : synchronisation CRM vers Google uniquement. L’état apparaît sur chaque rendez-vous ; « Réessayer » reprend un échec sans créer un deuxième événement. Reconnecter l’agenda dans Profil si nécessaire. Synchroniser l’annulation avant de replanifier un ancien événement.
 
 ## Règles financières
@@ -27,6 +27,10 @@ Les tableaux mensuels distinguent signature, échéance prévue et paiement rée
 6. Effectuer la recette réelle Google avec Tamim dans l’environnement choisi : connexion, création, déplacement, annulation et reconnexion. Aucun événement Google réel ni migration distante n’a été exécuté pendant l’implémentation.
 
 Pour revenir en arrière, restaurer une sauvegarde cohérente avec la version du serveur. Ne pas supprimer les nouvelles tables si des écritures financières ont été saisies.
+
+### Simplification dossier = société
+
+La migration `20261111000007_dossier_unique.sql` conserve la table société comme détail interne pour les jointures financières, avec une relation un-à-un. Si plusieurs dossiers étaient liés à une même société, elle sépare leurs identités internes sans modifier leurs identifiants, leurs rendez-vous, leurs documents ni leurs finances. Elle autorise la modification de l’identité via le dossier selon ses droits existants et désactive les anciennes opérations de fusion/rattachement. Déployer cette migration avant la nouvelle interface.
 
 ## Vérification reproductible
 

@@ -27,7 +27,7 @@ async function asService<T>(callback: () => Promise<T>) {
 }
 
 const row = (name: string, data: Record<string, unknown> = {}) => ({
-  line: 2, company: 'new', raison_sociale: name, statut: 'en_cours', ...data,
+  line: 2, allow_duplicate: false, raison_sociale: name, statut: 'en_cours', ...data,
 })
 const fingerprint = 'a'.repeat(64)
 
@@ -45,17 +45,18 @@ describe('confirmation transactionnelle d’un import Excel', () => {
     ]))
     expect(result.count).toBe(2)
     const imported = await db.query(
-      `select p.raison_sociale, p.societe_id is not null as rattachee, c.commission_cents::text as commission
-       from public.prospects p left join public.finance_commissions c on c.prospect_id=p.id
+      `select s.raison_sociale, c.commission_cents::text as commission
+       from public.prospects p join public.societes s on s.id = p.societe_id
+       left join public.finance_commissions c on c.prospect_id=p.id
        where p.id = any($1::uuid[]) order by commission nulls last`, [result.dossiers.map(entry => entry.id)],
     )
     expect(imported.rows).toEqual([
-      { raison_sociale: 'Éoliennes du Nord', rattachee: true, commission: '0' },
-      { raison_sociale: 'Centrale du Sud', rattachee: true, commission: null },
+      { raison_sociale: 'Éoliennes du Nord', commission: '0' },
+      { raison_sociale: 'Centrale du Sud', commission: null },
     ])
   })
 
-  it('signale les doublons et rattache un nouveau dossier après un choix explicite', async () => {
+  it('signale les doublons et crée un dossier distinct pour chaque ligne confirmée', async () => {
     const original = await asService(() => confirm([row('Société existante', { siret: '11111111111111' })]))
     const company = (await db.query<{ societe_id: string }>('select societe_id from public.prospects where id=$1', [original.dossiers[0]!.id])).rows[0]!.societe_id
     const candidateRows = [row('societe existante', { siret: '22222222222222' })]
@@ -64,17 +65,31 @@ describe('confirmation transactionnelle d’un import Excel', () => {
     ))
     expect(rows[0]?.result['2']?.map(candidate => candidate.id)).toEqual([company])
     await expect(asService(() => confirm(candidateRows))).rejects.toMatchObject({ code: '40001' })
-    const linked = await asService(() => confirm([
-      row('societe existante', { company, statut: 'signe' }),
-      row('societe existante', { company: 2, line: 3, statut: 'perdu' }),
+    const imported = await asService(() => confirm([
+      row('societe existante', { allow_duplicate: true, siret: '22222222222222', statut: 'signe' }),
+      row('societe existante', { allow_duplicate: true, siret: '33333333333333', line: 3, statut: 'perdu' }),
     ]))
-    const linkedRows = await db.query<{ societe_id: string, statut: string }>(
-      'select societe_id,statut from public.prospects where id=any($1::uuid[]) order by statut', [linked.dossiers.map(entry => entry.id)],
+    const importedRows = await db.query<{ societe_id: string, statut: string, siret: string }>(
+      'select societe_id, statut, siret from public.prospects where id=any($1::uuid[]) order by statut', [imported.dossiers.map(entry => entry.id)],
     )
-    expect(linkedRows.rows).toEqual([{ societe_id: company, statut: 'signe' }, { societe_id: company, statut: 'perdu' }])
+    expect(new Set([company, ...importedRows.rows.map(row => row.societe_id)]).size).toBe(3)
+    expect(importedRows.rows).toMatchObject([
+      { statut: 'signe', siret: '22222222222222' },
+      { statut: 'perdu', siret: '33333333333333' },
+    ])
     expect((await db.query('select raison_sociale,siret,statut from public.prospects where id=$1', [original.dossiers[0]!.id])).rows[0]).toEqual({
       raison_sociale: 'Société existante', siret: '11111111111111', statut: 'en_cours',
     })
+  })
+
+  it('refuse les anciennes demandes de rattachement à une société ou à une ligne du fichier', async () => {
+    await expect(asService(() => confirm([row('Rattachement historique', { company: randomUUID() })])))
+      .rejects.toMatchObject({ code: '22023' })
+    await expect(asService(() => confirm([
+      row('Rattachement historique'),
+      row('Rattachement historique', { company: 2, line: 3, allow_duplicate: true }),
+    ]))).rejects.toMatchObject({ code: '22023' })
+    expect((await db.query("select id from public.prospects where raison_sociale = 'Rattachement historique'")).rows).toEqual([])
   })
 
   it('annule les lignes précédentes si une ligne du lot échoue', async () => {

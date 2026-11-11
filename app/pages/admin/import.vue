@@ -3,7 +3,7 @@ import { FOURNISSEURS, PROSPECT_STATUTS, type ProspectStatut } from '~~/shared/t
 import {
   IMPORT_COLUMNS, IMPORT_COLUMN_KEYS, IMPORT_MAX_BYTES, IMPORT_MAX_COLUMNS, IMPORT_MAX_MB, IMPORT_MAX_ROWS,
   inferImportMapping,
-  type ImportColumn, type ImportCompanyChoice, type ImportMapping, type ImportPreview,
+  type ImportColumn, type ImportMapping, type ImportPreview,
   type ImportResult, type ImportRow, type ImportSelection, type ImportSheet, type ImportStatusMapping,
 } from '~~/shared/import-dossiers'
 
@@ -14,7 +14,6 @@ const mapping = ref<ImportMapping>({})
 const statuses = ref<ImportStatusMapping>({})
 const previewStatuses = ref('')
 const preview = ref<ImportPreview | null>(null)
-const choices = ref<Partial<Record<number, ImportCompanyChoice>>>({})
 const selected = ref<number[]>([])
 const confirmation = ref<{ selection: string, batch: string } | null>(null)
 const result = ref<ImportResult | null>(null)
@@ -36,29 +35,17 @@ const errorCount = computed(() => preview.value?.rows.filter(row => row.errors.l
 const profileName = computed(() => new Map(preview.value?.profiles.map(profile => [profile.id, profile.nom])))
 const currency = new Intl.NumberFormat('fr-FR', { style: 'currency', currency: 'EUR' })
 
-function needsCompanyChoice(row: ImportRow) {
-  return row.companies.length > 0 || row.duplicateInFile
+function isPotentialDuplicate(row: ImportRow) {
+  return row.duplicateInCrm || row.duplicateInFile
 }
 
-const selection = computed(() => {
-  const rows: ImportSelection[] = []
-  let incomplete = 0
-  for (const row of preview.value?.rows ?? []) {
-    if (!selectedLines.value.has(row.line) || row.errors.length) continue
-    const company = needsCompanyChoice(row) ? choices.value[row.line] : 'new'
-    if (company === undefined || (typeof company === 'number' && !selectedLines.value.has(company))) {
-      incomplete++
-      continue
-    }
-    rows.push({ line: row.line, company })
-  }
-  return { rows, incomplete }
-})
+const selection = computed<ImportSelection[]>(() => (preview.value?.rows ?? [])
+  .filter(row => selectedLines.value.has(row.line) && !row.errors.length)
+  .map(row => ({ line: row.line, allowDuplicate: isPotentialDuplicate(row) })))
 
 function resetPreview() {
   preview.value = null
   statuses.value = {}
-  choices.value = {}
   selected.value = []
   confirmation.value = null
   page.value = 1
@@ -145,8 +132,7 @@ async function showPreview() {
   await run(async () => {
     preview.value = await $fetch<ImportPreview>('/api/import', { method: 'POST', body: { step: 'preview', ...requestDetails() } })
     previewStatuses.value = JSON.stringify(statuses.value)
-    choices.value = {}
-    selected.value = preview.value.rows.filter(row => !row.errors.length && !needsCompanyChoice(row)).map(row => row.line)
+    selected.value = preview.value.rows.filter(row => !row.errors.length && !isPotentialDuplicate(row)).map(row => row.line)
     confirmation.value = null
     page.value = 1
   })
@@ -159,15 +145,15 @@ function mapStatus(key: string, event: Event) {
 }
 
 async function confirmImport() {
-  if (busy.value || pendingStatuses.value || selection.value.incomplete || !selection.value.rows.length) return
+  if (busy.value || pendingStatuses.value || !selection.value.length) return
   await run(async () => {
-    const serialized = JSON.stringify(selection.value.rows)
+    const serialized = JSON.stringify(selection.value)
     if (confirmation.value?.selection !== serialized) {
       confirmation.value = { selection: serialized, batch: crypto.randomUUID() }
     }
     result.value = await $fetch<ImportResult>('/api/import', {
       method: 'POST',
-      body: { step: 'confirm', ...requestDetails(), batch: confirmation.value.batch, selection: selection.value.rows },
+      body: { step: 'confirm', ...requestDetails(), batch: confirmation.value.batch, selection: selection.value },
     })
     workbook.value = ''
   })
@@ -258,21 +244,21 @@ async function confirmImport() {
           <h2 id="import-preview" class="text-base font-semibold">Aperçu des dossiers</h2>
           <p class="text-sm text-gray-600" aria-live="polite">{{ preview.rows.length }} lignes · {{ errorCount }} en erreur · {{ selected.length }} sélectionnées</p>
         </div>
-        <p class="text-sm text-gray-600">Pour chaque doublon potentiel, choisissez la société de rattachement ou créez une société distincte.</p>
+        <p v-if="preview.rows.some(isPotentialDuplicate)" class="text-sm text-gray-600">Les doublons potentiels sont décochés par défaut. Cochez une ligne pour créer un dossier distinct.</p>
         <div class="overflow-x-auto">
           <table class="table-base min-w-[48rem]">
             <thead>
               <tr>
                 <th scope="col">Importer</th>
                 <th scope="col">Ligne</th>
-                <th scope="col">Société et dossier</th>
+                <th scope="col">Dossier</th>
                 <th scope="col">Commission HT</th>
                 <th scope="col">Vérification</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="row in visibleRows" :key="row.line" class="align-top">
-                <td><input v-model="selected" :aria-label="`Importer la ligne ${row.line}`" :value="row.line" :disabled="busy || row.errors.length > 0" type="checkbox" class="accent-primary"></td>
+                <td><input v-model="selected" :aria-label="isPotentialDuplicate(row) ? `Créer un dossier distinct pour la ligne ${row.line}` : `Importer la ligne ${row.line}`" :value="row.line" :disabled="busy || row.errors.length > 0" type="checkbox" class="accent-primary"></td>
                 <td>{{ row.line }}</td>
                 <td class="max-w-sm">
                   <div class="break-words font-medium">{{ row.dossier.raison_sociale || 'Société manquante' }}</div>
@@ -297,20 +283,9 @@ async function confirmImport() {
                   <ul v-if="row.errors.length" class="list-inside list-disc text-sm text-red-800">
                     <li v-for="issue in row.errors" :key="issue">{{ issue }}</li>
                   </ul>
-                  <div v-else-if="needsCompanyChoice(row)">
-                    <label class="mb-1 block text-sm text-amber-800" :for="`import-company-${row.line}`">
-                      {{ row.companies.length ? 'Société existante possible' : 'Société répétée dans la feuille' }}
-                    </label>
-                    <select :id="`import-company-${row.line}`" v-model="choices[row.line]" :disabled="busy" class="input">
-                      <option :value="undefined">Choisir le rattachement</option>
-                      <option v-for="company in row.companies" :key="company.id" :value="company.id">
-                        {{ company.raison_sociale }} · {{ company.siret || 'sans SIRET' }} · {{ company.id.slice(0, 8) }}
-                      </option>
-                      <option v-for="earlier in row.earlierLines" :key="earlier" :value="earlier" :disabled="!selectedLines.has(earlier)">Même société que la ligne {{ earlier }}</option>
-                      <option value="new_duplicate">Créer une société distincte</option>
-                    </select>
-                  </div>
-                  <span v-else class="text-sm text-gray-600">Nouvelle société</span>
+                  <span v-else-if="isPotentialDuplicate(row)" class="text-sm text-amber-800">
+                    {{ row.duplicateInCrm ? 'Doublon potentiel dans les dossiers' : 'Doublon potentiel dans la feuille' }}
+                  </span>
                 </td>
               </tr>
             </tbody>
@@ -323,10 +298,9 @@ async function confirmImport() {
           <button type="button" class="btn-secondary" :disabled="page >= totalPages || busy" @click="page++">Suivante</button>
         </div>
 
-        <p v-if="selection.incomplete" class="text-sm text-amber-800">Choisissez la société de chaque ligne sélectionnée.</p>
         <div class="flex flex-wrap items-center gap-3">
-          <button type="button" class="btn-primary" :disabled="busy || pendingStatuses || selection.incomplete > 0 || !selection.rows.length" @click="confirmImport">
-            Confirmer l’import de {{ selection.rows.length }} {{ selection.rows.length === 1 ? 'dossier' : 'dossiers' }}
+          <button type="button" class="btn-primary" :disabled="busy || pendingStatuses || !selection.length" @click="confirmImport">
+            Confirmer l’import de {{ selection.length }} {{ selection.length === 1 ? 'dossier' : 'dossiers' }}
           </button>
           <span v-if="busy" role="status" class="text-sm text-gray-600">Traitement en cours…</span>
         </div>

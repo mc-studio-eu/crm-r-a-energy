@@ -1,17 +1,15 @@
 <script setup lang="ts">
 import {
   ASSIGNABLE_ROLES, ENERGIES, FOURNISSEURS, PROSPECT_STATUTS,
-  type Energie, type Fournisseur, type Prospect, type ProspectStatut, type Societe,
+  type Energie, type Fournisseur, type Prospect, type ProspectStatut,
 } from '~~/shared/types'
 
-const props = defineProps<{ prospect?: Prospect | null, initialSociete?: Societe | null }>()
+const props = defineProps<{ prospect?: Prospect | null }>()
 const emit = defineEmits<{ saved: [id: string] }>()
 
 const supabase = useSupabaseClient()
 const userId = useUserId()
-const { profile, isAdmin } = useProfile()
-const societe = ref(props.initialSociete ?? null)
-const modeSociete = ref<'nouvelle' | 'existante'>(societe.value ? 'existante' : 'nouvelle')
+const { profile } = useProfile()
 const statut = ref<ProspectStatut>('en_cours')
 
 const form = reactive({
@@ -32,7 +30,7 @@ const form = reactive({
   notes: props.prospect?.notes ?? '',
   assigne_a: props.prospect?.assigne_a ?? '',
 })
-const identite = reactive({ raison_sociale: '', siret: '' })
+const identite = reactive({ raison_sociale: props.prospect?.raison_sociale ?? '', siret: props.prospect?.siret ?? '' })
 
 const { data: commerciaux } = await useAsyncData('form-commerciaux', async () => {
   const { data } = await supabase
@@ -166,11 +164,7 @@ async function rechercherSiret() {
 async function save() {
   error.value = ''
   geocodeWarning.value = ''
-  if (!props.prospect && modeSociete.value === 'existante' && !societe.value) {
-    error.value = 'Sélectionnez la société à rattacher au dossier.'
-    return
-  }
-  if (!props.prospect && modeSociete.value === 'nouvelle' && !identite.raison_sociale.trim()) {
+  if (!identite.raison_sociale.trim()) {
     error.value = 'Saisissez une raison sociale.'
     return
   }
@@ -204,6 +198,8 @@ async function save() {
 
   const payload = {
     ...form,
+    raison_sociale: identite.raison_sociale.trim(),
+    siret: identite.siret.replace(/\s/g, '') || null,
     assigne_a: form.assigne_a || null,
     teleprospecteur_id: form.teleprospecteur_id || null,
     fournisseur: form.fournisseur || null,
@@ -225,14 +221,10 @@ async function save() {
       return
     }
 
-    const existante = modeSociete.value === 'existante' ? societe.value : null
     const { data, error: err } = await supabase
       .from('prospects')
       .insert({
         ...payload,
-        societe_id: existante?.id ?? null,
-        raison_sociale: existante?.raison_sociale ?? identite.raison_sociale,
-        siret: existante ? existante.siret : identite.siret,
         statut: statut.value,
         cree_par: userId.value,
       })
@@ -258,22 +250,8 @@ async function save() {
 
 <template>
   <form class="space-y-4" @submit.prevent="save">
-    <div v-if="prospect" class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-gray-50 px-3 py-2 text-sm">
-      <span>{{ prospect.raison_sociale }}<span v-if="prospect.siret" class="ml-2 text-gray-500">{{ prospect.siret }}</span></span>
-      <NuxtLink v-if="isAdmin" :to="`/societes/${prospect.societe_id}`" class="text-primary hover:underline">Modifier la société</NuxtLink>
-    </div>
-    <div v-else class="space-y-3">
-      <label class="block">
-        <span class="label">Société</span>
-        <select v-model="modeSociete" class="input">
-          <option value="nouvelle">Créer une société</option>
-          <option value="existante">Rattacher à une société existante</option>
-        </select>
-      </label>
-      <SocietePicker v-if="modeSociete === 'existante'" v-model="societe" />
-    </div>
     <div class="grid gap-4 md:grid-cols-2">
-      <div v-if="!prospect && modeSociete === 'nouvelle'" class="relative">
+      <div class="relative">
         <label class="label">Raison sociale *</label>
         <input
           v-model="identite.raison_sociale" required class="input" autocomplete="off"
@@ -291,7 +269,7 @@ async function save() {
           </li>
         </ul>
       </div>
-      <div v-if="!prospect && modeSociete === 'nouvelle'">
+      <div>
         <label class="label">SIRET</label>
         <div class="flex gap-2">
           <input v-model="identite.siret" class="input" pattern="[0-9]{14}" title="14 chiffres" placeholder="14 chiffres" @keydown.enter.prevent="rechercherSiret">

@@ -24,10 +24,8 @@ export const IMPORT_COLUMN_KEYS = Object.keys(IMPORT_COLUMNS) as ImportColumn[]
 export type ImportMapping = Partial<Record<ImportColumn, number>>
 export type ImportStatusMapping = Record<string, ProspectStatut>
 export type ImportCell = string | number | Date | boolean | null
-export type ImportCompany = { id: string, raison_sociale: string, siret: string | null }
 export type ImportProfile = { id: string, nom: string, role: UserRole }
-export type ImportCompanyChoice = 'new' | 'new_duplicate' | string | number
-export type ImportSelection = { line: number, company: ImportCompanyChoice }
+export type ImportSelection = { line: number, allowDuplicate: boolean }
 
 export interface ImportSheet {
   name: string
@@ -54,8 +52,7 @@ export interface ImportRow {
   dossier: ImportDossier
   statusLabel: string
   errors: string[]
-  companies: ImportCompany[]
-  earlierLines: number[]
+  duplicateInCrm: boolean
   duplicateInFile: boolean
 }
 
@@ -250,8 +247,7 @@ export function parseImportRows(
       dossier,
       statusLabel,
       errors,
-      companies: [],
-      earlierLines: matching.map(other => other.line),
+      duplicateInCrm: false,
       duplicateInFile: matching.length > 0,
     })
   }

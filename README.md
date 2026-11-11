@@ -45,7 +45,7 @@ un opérateur de confiance attribue explicitement `role = 'admin'` à sa ligne
 `public.profiles` en base. Les métadonnées utilisateur ne confèrent aucun rôle
 privilégié. Les invitations suivantes passent par l'écran Équipe de l'app.
 
-Le [guide d'intégration](docs/integration-crm.md) décrit les sociétés multi-dossiers,
+Le [guide d'intégration](docs/integration-crm.md) décrit la fiche dossier unique par société,
 commissions, échéanciers, import Excel et la procédure de migration coordonnée.
 
 ### Variables d'environnement

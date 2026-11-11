@@ -4,7 +4,7 @@ import { ASSIGNABLE_ROLES } from '../../../shared/types'
 import {
   IMPORT_COLUMNS, IMPORT_COLUMN_KEYS, IMPORT_MAX_BYTES, IMPORT_MAX_COLUMNS, IMPORT_MAX_MB, IMPORT_MAX_ROWS,
   importCellText, isBlankImportRow, parseImportRows,
-  type ImportCompany, type ImportPreview, type ImportProfile, type ImportResult, type ImportSheet,
+  type ImportPreview, type ImportProfile, type ImportResult, type ImportSheet,
 } from '../../../shared/import-dossiers'
 import { IMPORT_MAX_SHEETS, readImportWorkbook } from '../../utils/import-workbook'
 import { requireRole, supabaseAdmin } from '../../utils/supabase-admin'
@@ -26,7 +26,7 @@ const request = z.discriminatedUnion('step', [
     step: z.literal('confirm'),
     ...details,
     batch: z.uuid(),
-    selection: z.array(z.object({ line, company: z.union([z.literal('new'), z.literal('new_duplicate'), z.uuid(), line]) })).min(1).max(IMPORT_MAX_ROWS),
+    selection: z.array(z.strictObject({ line, allowDuplicate: z.boolean() })).min(1).max(IMPORT_MAX_ROWS),
   }),
 ])
 
@@ -115,25 +115,24 @@ export default defineEventHandler(async (event) => {
           siret: dossier.siret && /^\d{14}$/.test(dossier.siret) ? dossier.siret : null,
         })),
     })
-    if (candidateError) throw createError({ statusCode: 500, message: 'Impossible de vérifier les sociétés existantes.' })
-    const existing = candidates as Record<string, ImportCompany[]>
-    for (const row of preview.rows) row.companies = existing[row.line] ?? []
+    if (candidateError) throw createError({ statusCode: 500, message: 'Impossible de vérifier les doublons dans les dossiers.' })
+    const existing = candidates as Record<string, unknown[]>
+    for (const row of preview.rows) row.duplicateInCrm = Boolean(existing[row.line]?.length)
     return preview
   }
 
-  const selected = new Map(body.selection.map(row => [row.line, row.company]))
+  const selected = new Map(body.selection.map(row => [row.line, row.allowDuplicate]))
   if (selected.size !== body.selection.length) throw conflict('Une ligne apparaît plusieurs fois dans la sélection.')
   const previewRows = new Map(preview.rows.map(row => [row.line, row]))
-  const payload = Array.from(selected, ([line, company]) => {
+  const payload = Array.from(selected, ([line, allowDuplicate]) => {
     const row = previewRows.get(line)
     if (!row || row.errors.length) throw conflict(`Vérifiez la ligne ${line} avant l’import.`)
     // Les correspondances en base sont contrôlées dans la transaction, après la vérification du reçu.
     // Une confirmation concurrente du même lot peut ainsi retrouver le résultat déjà enregistré.
-    if ((company === 'new' && row.duplicateInFile)
-      || (typeof company === 'number' && (!row.earlierLines.includes(company) || !selected.has(company)))) {
-      throw conflict(`Vérifiez le rattachement de la ligne ${line} dans un nouvel aperçu.`)
+    if (row.duplicateInFile && !allowDuplicate) {
+      throw conflict(`La ligne ${line} est un doublon potentiel. Actualisez l’aperçu.`)
     }
-    return { line, company, ...row.dossier }
+    return { line, allow_duplicate: allowDuplicate, ...row.dossier }
   })
   const { data, error } = await admin.rpc('import_dossier_confirmer', {
     p_acteur: actor.id,

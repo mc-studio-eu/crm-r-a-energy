@@ -279,9 +279,9 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
         </label>
         <template v-if="isAdmin">
           <label>
-            <span class="label">Société</span>
+            <span class="label">Dossier</span>
             <select v-model="societe" class="input">
-              <option value="">Toutes</option>
+              <option value="">Tous</option>
               <option v-for="s in filtres?.societes" :key="s.id" :value="s.id">{{ s.raison_sociale }}</option>
             </select>
           </label>
