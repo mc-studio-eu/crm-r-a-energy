@@ -24,6 +24,7 @@ const edition = ref<Edition | null>(null)
 const mouvement = reactive({ date: '', montant: '', note: '' })
 const beneficiaires = computed(() => annuaire.value?.beneficiaires ?? [])
 const partsEnregistrees = computed(() => dossier.value?.repartitions ?? [])
+const partsExternes = computed(() => partsEnregistrees.value.filter(part => !part.est_ra_energy))
 const echeances = computed(() => dossier.value?.echeances ?? [])
 const echeancePaiement = computed(() => {
   const cible = edition.value
@@ -198,10 +199,14 @@ async function supprimerMouvement(type: 'echeance' | 'paiement', id: string) {
   }
 }
 
+function partEcheance(e: FinanceEcheance) {
+  return partsEnregistrees.value.find(part => part.id === e.repartition_id)
+}
+
 function sens(e: FinanceEcheance) {
-  return e.repartition_id
-    ? `Reversement · ${partsEnregistrees.value.find(part => part.id === e.repartition_id)?.beneficiaire ?? 'Bénéficiaire'}`
-    : 'Encaissement fournisseur'
+  if (!e.repartition_id) return 'Encaissement fournisseur'
+  const part = partEcheance(e)
+  return `${part?.est_ra_energy ? 'Mouvement interne' : 'Reversement'} · ${part?.beneficiaire ?? 'Bénéficiaire'}`
 }
 </script>
 
@@ -243,7 +248,7 @@ function sens(e: FinanceEcheance) {
                   {{ partsEnregistrees.find(r => r.beneficiaire_id === part.beneficiaire_id)?.beneficiaire }}
                 </option>
                 <option v-for="b in beneficiaires" :key="b.id" :value="b.id" :disabled="!b.actif && b.id !== part.beneficiaire_id">
-                  {{ b.nom }}{{ b.actif ? '' : ' (désactivé)' }}
+                  {{ b.nom }}{{ b.est_ra_energy ? ' (part interne)' : '' }}{{ b.actif ? '' : ' (désactivé)' }}
                 </option>
               </select>
             </label>
@@ -292,9 +297,12 @@ function sens(e: FinanceEcheance) {
         </fieldset>
         <ul v-if="partsEnregistrees.length" class="text-sm text-gray-600">
           <li v-for="part in partsEnregistrees" :key="part.id">
-            {{ part.beneficiaire }} ({{ part.fonction }}) : <strong>{{ financeEuros(part.montant_cents) }} HT</strong> enregistrés
+            {{ part.beneficiaire }} ({{ part.fonction }}{{ part.est_ra_energy ? ' · part interne' : '' }}) : <strong>{{ financeEuros(part.montant_cents) }} HT</strong> enregistrés
           </li>
         </ul>
+        <p v-if="dossier.part_ra_cents != null" class="text-sm text-gray-700">
+          Part R&A Energy : <strong>{{ financeEuros(dossier.part_ra_cents) }} HT</strong>
+        </p>
       </form>
 
       <div v-if="dossier.commission_cents !== null" class="space-y-3">
@@ -317,7 +325,7 @@ function sens(e: FinanceEcheance) {
                 <option value="">
                   Encaissement fournisseur
                 </option>
-                <option v-for="part in partsEnregistrees" :key="part.id" :value="part.id">
+                <option v-for="part in partsExternes" :key="part.id" :value="part.id">
                   Reversement · {{ part.beneficiaire }}
                 </option>
               </select>
@@ -378,7 +386,7 @@ function sens(e: FinanceEcheance) {
               <button v-if="!e.repartition_id && totalPaye(e) < e.montant_cents" type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirPaiement(e)">
                 Paiement partiel ou autre date
               </button>
-              <button v-if="e.repartition_id" type="button" class="btn-secondary" :disabled="enCours || totalPaye(e) >= e.montant_cents" @click="ouvrirPaiement(e)">
+              <button v-if="e.repartition_id && !partEcheance(e)?.est_ra_energy" type="button" class="btn-secondary" :disabled="enCours || totalPaye(e) >= e.montant_cents" @click="ouvrirPaiement(e)">
                 Ajouter un paiement
               </button>
               <button type="button" class="btn-secondary" :disabled="enCours" @click="ouvrirEcheance(e)">

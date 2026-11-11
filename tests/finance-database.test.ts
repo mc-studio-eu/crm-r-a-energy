@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import type { PGlite } from '@electric-sql/pglite'
-import { MAX_FINANCE_CENTS, type FinanceDossier } from '../shared/finance'
-import { createTestDatabase, seedUser } from './helpers/database'
+import { MAX_FINANCE_CENTS, type FinanceDossier, type FinanceTableau } from '../shared/finance'
+import { asUser, createTestDatabase, seedUser } from './helpers/database'
 
 describe('Finance PostgreSQL transactions', () => {
   let db: PGlite
@@ -124,6 +124,72 @@ describe('Finance PostgreSQL transactions', () => {
     }
     expect((await lignes(null)).find(l => l.type === 'part_ra')?.montant_cents).toBe(13335)
     expect((await lignes(second)).map(l => [l.type, l.montant_cents])).toEqual([['part_signee', 0]])
+  })
+
+  it('conserve la part interne dans R&A Energy sans la compter parmi les reversements', async () => {
+    const id = await scalar("insert into prospects(raison_sociale,statut,date_signature) values('Finance RA','signe','2020-11-11') returning id", [])
+    const societe = await scalar('select societe_id as id from prospects where id=$1', [id])
+    function modifierBeneficiaire(identifiant: string | null, action: string, payload: unknown) {
+      return scalar('select finance_modifier_beneficiaire($1,$2,$3,$4) as id', [admin, identifiant, action, payload])
+    }
+    const ra = await modifierBeneficiaire(null, 'enregistrer', { nom: 'R&A', profil_id: null, actif: true, est_ra_energy: true })
+    await mutate(id, 'commission', { commission_cents: 120_000, repartitions: [
+      { beneficiaire_id: beneficiary, montant_cents: 30_000 },
+      { beneficiaire_id: second, montant_cents: 0 },
+      { beneficiaire_id: ra, montant_cents: 90_000 },
+    ] })
+    const avant = await lire(id)
+    const partInterne = avant.repartitions.find(p => p.beneficiaire_id === ra)!
+    const partExterne = avant.repartitions.find(p => p.beneficiaire_id === beneficiary)!
+    expect(partInterne.est_ra_energy).toBe(false)
+    expect(avant.part_ra_cents).toBe(0)
+
+    const historique = await mutate(id, 'echeance', { repartition_id: partInterne.id, montant_cents: 20_000, date_prevue: '2020-11-01' })
+    const ancienPaiement = await mutate(id, 'paiement', { echeance_id: historique, montant_cents: 5_000, date_paiement: '2020-11-02' })
+    const reversement = await mutate(id, 'echeance', { repartition_id: partExterne.id, montant_cents: 30_000, date_prevue: '2020-11-03' })
+    await mutate(id, 'paiement', { echeance_id: reversement, montant_cents: 10_000, date_paiement: '2020-11-04' })
+
+    await db.query('update finance_beneficiaires set est_ra_energy=true where id=$1', [ra])
+    await modifierBeneficiaire(ra, 'enregistrer', { nom: 'R&A Energy', profil_id: null, actif: true })
+    const apres = await lire(id)
+    expect(apres.part_ra_cents).toBe(90_000)
+    expect(apres.repartitions).toEqual(avant.repartitions.map(p => p.id === partInterne.id
+      ? { ...p, beneficiaire: 'R&A Energy', est_ra_energy: true }
+      : p))
+    expect(apres.echeances.find(e => e.id === historique)?.paiements).toMatchObject([{ id: ancienPaiement, montant_cents: 5_000 }])
+    await expect(mutate(id, 'echeance', { repartition_id: partInterne.id, montant_cents: 100, date_prevue: '2020-11-11' })).rejects.toThrow(/ne fait pas l’objet d’un reversement/)
+    await expect(mutate(id, 'paiement', { echeance_id: historique, montant_cents: 100, date_paiement: '2020-11-11' })).rejects.toThrow(/ne fait pas l’objet d’un reversement/)
+    await mutate(id, 'paiement', { id: ancienPaiement, montant_cents: 4_000, date_paiement: '2020-11-02' })
+
+    async function dashboard(actor = admin, filtre: string | null = null) {
+      return (await db.query<{ result: FinanceTableau }>(
+        'select finance_tableau($1,2020,11,$2,null,null,$3,null,1) as result', [actor, societe, filtre],
+      )).rows[0]!.result
+    }
+    const general = await dashboard()
+    expect(general.lignes.map(l => [l.type, l.montant_cents])).toEqual([
+      ['part_ra', 90_000], ['part_signee', expect.any(Number)], ['part_signee', expect.any(Number)], ['signature', 120_000],
+      ['sortie_reelle', 10_000], ['sortie_prevue', 30_000],
+    ])
+    expect(general.mois.find(m => m.type === 'part_signee')).toMatchObject({ nombre: 2, montant_cents: '30000' })
+    expect(general.retards_admin?.reversement_cents).toBe('20000')
+    expect((await dashboard(admin, ra)).lignes).toEqual([])
+    const personnel = await dashboard(owner)
+    expect(personnel.dossiers).toMatchObject([{ prospect_id: id, montant_cents: 30_000, paye_cents: 10_000 }])
+    expect(personnel.lignes.map(l => l.type)).toEqual(['part_signee', 'sortie_reelle', 'sortie_prevue'])
+
+    await db.query('update prospects set date_signature=null where id=$1', [id])
+    expect((await dashboard()).lignes.some(l => l.type === 'part_ra')).toBe(false)
+    expect((await lire(id)).part_ra_cents).toBe(90_000)
+    await db.query("update prospects set statut='en_cours', date_signature='2020-11-11' where id=$1", [id])
+    expect((await dashboard()).lignes.some(l => l.type === 'part_ra')).toBe(false)
+
+    await expect(modifierBeneficiaire(ra, 'enregistrer', { nom: 'R&A Energy', profil_id: owner, actif: true })).rejects.toThrow(/compte personnel/)
+    await expect(modifierBeneficiaire(ra, 'supprimer', {})).rejects.toThrow(/ne peut pas être supprimé/)
+    const homonyme = await modifierBeneficiaire(null, 'enregistrer', { nom: 'R&A Energy', profil_id: null, actif: true })
+    await expect(db.query('update finance_beneficiaires set est_ra_energy=true where id=$1', [homonyme])).rejects.toThrow(/un_seul_ra_energy/)
+    await expect(db.query('update finance_beneficiaires set profil_id=$1 where id=$2', [owner, ra])).rejects.toThrow(/ra_sans_profil/)
+    await expect(asUser(db, admin, () => db.query('select finance_lire_dossier($1,$2)', [admin, id]))).rejects.toThrow(/permission denied/)
   })
 
   it('conserve les échéances en retard et le bilan personnel hors période sélectionnée', async () => {

@@ -11,6 +11,8 @@
 
 ## Règles financières
 
+La migration `20261111000016_beneficiaire_ra_energy.sql` permet d’identifier explicitement un unique bénéficiaire interne avec `est_ra_energy`. L’association d’un bénéficiaire existant se fait par son identifiant, jamais automatiquement par son nom, et doit être journalisée dans `finance_audit`. Ses répartitions sont conservées, mais ne sont plus déduites de la part R&A Energy ni comptabilisées dans les reversements externes. Il ne peut pas être rattaché à un compte personnel. Le dossier affiche la part R&A indépendamment du statut ; le tableau mensuel des parts signées conserve ses conditions de statut et de date de signature. Appliquer la migration avant de déployer l’interface.
+
 La migration `20261111000011_trois_beneficiaires.sql` porte la limite de répartition à trois bénéficiaires. L’appliquer après la migration de saisie par montant et avant de déployer l’interface correspondante. Le bouton « Ajouter un bénéficiaire » reste disponible jusqu’à la troisième part ; les contrôles de doublons et de dépassement de la commission sont conservés.
 
 Les montants sont stockés en centimes et les taux en centièmes de pourcentage. La répartition utilise les plus forts restes pour garantir l’exactitude au centime, notamment sur une commission de 0,01 € partagée à 50/50. La part R&A est le solde de la commission brute après les parts attribuées.

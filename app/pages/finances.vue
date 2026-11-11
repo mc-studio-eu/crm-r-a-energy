@@ -114,7 +114,7 @@ function totalType(t: FinanceType) {
     .reduce((sum, row) => sum + BigInt(row.montant_cents ?? '0'), 0n)
 }
 
-const edition = reactive({ id: '', nom: '', profil_id: '', actif: true })
+const edition = reactive({ id: '', nom: '', profil_id: '', actif: true, est_ra_energy: false })
 const sauvegarde = ref(false)
 const erreurEdition = ref('')
 const confirmation = ref('')
@@ -125,6 +125,7 @@ async function modifierBeneficiaire(b?: FinanceBeneficiaire) {
   edition.nom = b?.nom ?? ''
   edition.profil_id = b?.profil_id ?? ''
   edition.actif = b?.actif ?? true
+  edition.est_ra_energy = b?.est_ra_energy ?? false
   erreurEdition.value = ''
   confirmation.value = ''
   if (b) {
@@ -483,13 +484,14 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
             <span class="label">Nom</span>
             <input v-model="edition.nom" class="input" maxlength="150" required>
           </label>
-          <label>
+          <label v-if="!edition.est_ra_energy">
             <span class="label">Compte CRM (facultatif)</span>
             <select v-model="edition.profil_id" class="input">
               <option value="">Aucun compte lié</option>
               <option v-for="p in annuaire?.profils" :key="p.id" :value="p.id">{{ p.nom }}</option>
             </select>
           </label>
+          <p v-else class="text-sm text-gray-600">Part interne R&A Energy, sans compte CRM associé.</p>
           <label class="flex items-center gap-2 text-sm">
             <input v-model="edition.actif" type="checkbox">
             Actif pour les nouvelles répartitions
@@ -523,13 +525,16 @@ async function supprimerBeneficiaire(b: FinanceBeneficiaire) {
           </thead>
           <tbody>
             <tr v-for="b in annuaire.beneficiaires" :key="b.id">
-              <td class="font-semibold">{{ b.nom }}</td>
+              <td class="font-semibold">
+                {{ b.nom }}
+                <span v-if="b.est_ra_energy" class="ml-2 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">Part interne</span>
+              </td>
               <td>{{ b.profil_id ? annuaire.profils.find(p => p.id === b.profil_id)?.nom ?? 'Compte lié' : '—' }}</td>
               <td>{{ b.actif ? 'Actif' : 'Désactivé' }}</td>
               <td>
                 <div class="flex flex-wrap gap-2">
                   <button type="button" class="btn-secondary" :disabled="sauvegarde" @click="modifierBeneficiaire(b)">Modifier</button>
-                  <button type="button" class="btn-secondary" :disabled="sauvegarde" @click="supprimerBeneficiaire(b)">Supprimer</button>
+                  <button v-if="!b.est_ra_energy" type="button" class="btn-secondary" :disabled="sauvegarde" @click="supprimerBeneficiaire(b)">Supprimer</button>
                 </div>
               </td>
             </tr>

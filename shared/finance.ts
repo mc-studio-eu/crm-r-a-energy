@@ -19,12 +19,14 @@ export interface FinanceBeneficiaire {
   nom: string
   profil_id: string | null
   actif: boolean
+  est_ra_energy: boolean
 }
 
 export interface FinanceRepartition {
   id: string
   beneficiaire_id: string
   beneficiaire: string
+  est_ra_energy: boolean
   taux_bps: number
   fonction: string
   montant_cents: number
@@ -50,6 +52,7 @@ export interface FinanceEcheance {
 
 export interface FinanceDossier {
   commission_cents: number | null
+  part_ra_cents: number | null
   repartitions: FinanceRepartition[]
   echeances: FinanceEcheance[]
 }
